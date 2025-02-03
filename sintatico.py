@@ -18,12 +18,8 @@ class Sintatico:
 
     def traduz(self):
         self.tokenLido = self.lexico.getToken()
-        try:
-            self.prog()
-            print('Traduzido com sucesso.')
-        except Exception as e:
-            print('Erro na tradução.', e)
-            pass
+        self.prog()
+        print('Traduzido com sucesso.')
         # self.semantico.finaliza()
 
     def consome(self, tokenEsperado):
@@ -71,7 +67,7 @@ class Sintatico:
         self.gerar_codigo_inicial()
         self.funcao()
         self.restoFuncoes()
-        self.semantico.verificarMain()
+        self.semantico.verificaMain()
         self.consome(TOKEN.eof)
         self.gerar_codigo_final()
         
@@ -92,7 +88,7 @@ class Sintatico:
         self.consome(TOKEN.fechaPar)
         RETURN, codigoDois = self.tipoResultado()
         self.semantico.declara(IDENT, (TOKEN.FUNCTION, ARGS + RETURN))
-        self.semantico.iniciaFuncao()
+        self.semantico.iniciaFuncao(self.tokenLido)
         
         for arg in ARGS:
             (tt, (tipo, info)) = arg
@@ -102,7 +98,7 @@ class Sintatico:
         self.semantico.gera(1, codigo)
         
         self.corpo()
-        self.semantico.verificaRetorno(IDENT, RETURN[0][1])
+        self.semantico.verificaRetornoFuncao(IDENT, RETURN[0][1])
         self.semantico.terminaFuncao()
         
     def tipoResultado(self):
@@ -113,7 +109,7 @@ class Sintatico:
         else:
             tipo = None
         randomToken = (0, 0, 0, 0)
-        return [(randomToken, tipo)], self.semantico.tiposFuncoes[tipo]
+        return [(randomToken, tipo)], self.semantico.tipos_retorno[tipo]
         
     def params(self):
         # <params> -> <tipo> ident <restoParams> | LAMBDA
@@ -287,10 +283,10 @@ class Sintatico:
         
     def expOpc(self):
         # <expOpc> -> LAMBDA | <exp>
-        if self.tokenLido[0] in [TOKEN.INT, TOKEN.ident, 
-                                 TOKEN.abrePar, TOKEN.FLOAT, 
+        if self.tokenLido[0] in [TOKEN.intVal, TOKEN.ident, 
+                                 TOKEN.abrePar, TOKEN.floatVal, 
                                  TOKEN.NOT, TOKEN.mais, 
-                                 TOKEN.menos, TOKEN.string]:
+                                 TOKEN.menos, TOKEN.stringVal]:
             tipoExp, codigo = self.exp()
             return tipoExp, codigo
         else:
@@ -324,10 +320,10 @@ class Sintatico:
             
             if tipoIdent[0] != tipoRange[0] and tipoRange[1] is True:
                 msg = f'ERROR: Variavel {IDENT[1]} e range de tipos diferentes'
-                self.semantico.erroSemantico(IDENT, msg)
+                self.semantico.erroSemantico(self.tokenLido, msg)
             elif tipoIdent != (TOKEN.INT, False) and tipoRange == (TOKEN.INT, False):
                 msg = f'ERROR: Variavel {IDENT[1]} deve ser do tipo inteiro'
-                self.semantico.erroSemantico(IDENT, msg)
+                self.semantico.erroSemantico(self.tokenLido, msg)
             
             self.consome(TOKEN.DO)
             codigo = 'for ' + IDENT[1] + ' in ' + codigo + ':\n'
@@ -348,18 +344,19 @@ class Sintatico:
             
             if tipoExp != (TOKEN.INT, False):
                 msg = 'O primeiro parametro deve ser um inteiro'
-                self.semantico.erroSemantico(tipoExp, msg)
+                self.semantico.erroSemantico(self.tokenLido, msg)
             self.consome(TOKEN.virg)
             
             tipoExp2, codigo2 = self.exp()
+            
             if tipoExp2 != (TOKEN.INT, False):
                 msg = 'O segundo parametro deve ser um inteiro'
-                self.semantico.erroSemantico(tipoExp2, msg)
+                self.semantico.erroSemantico(self.tokenLido, msg)
             
             tipoOpcRange, codigo3 = self.opcRange()
             if tipoOpcRange != (TOKEN.INT, False) and tipoOpcRange is not None:
                 msg = 'O terceiro parametro deve ser um inteiro'
-                self.semantico.erroSemantico(tipoOpcRange, msg)
+                self.semantico.erroSemantico(self.tokenLido, msg)
                 
             self.consome(TOKEN.fechaPar)
             codigo = 'range(' + codigo + ', ' + codigo2 + codigo3 + ')'
@@ -405,7 +402,7 @@ class Sintatico:
         if self.tokenLido[0] == TOKEN.virg:
             self.consome(TOKEN.virg)
             tipoElem, codigo = self.elem()
-            tipoElem = self.semantico.checarOperacao(tipo, tipoElem, TOKEN.virg)
+            tipoElem = self.semantico.checaOperacao(tipo, tipoElem, TOKEN.virg)
             tipoRestoElem, codigo2 = self.restoElemLista(tipoElem)
             return tipoRestoElem, ', ' + codigo + codigo2
         else:
@@ -456,7 +453,7 @@ class Sintatico:
             self.consome(TOKEN.atrib)
             tipoExp, codigo2 = self.exp()
             
-            if self.semantico.checarOperacao(tipoOpcIndice, tipoExp, TOKEN.atrib) is None:
+            if self.semantico.checaOperacao(tipoOpcIndice, tipoExp, TOKEN.atrib) is None:
                 msg = f'ERROR: Atribuicao invalida'
                 self.semantico.erroSemantico(IDENT, msg)
             
@@ -529,7 +526,7 @@ class Sintatico:
         # <impressao> -> write ( <lista_out> );
         self.consome(TOKEN.WRITE)
         self.consome(TOKEN.abrePar)
-        args, codigo = self.listaOut()
+        args, codigo = self.listaOuts()
         self.consome(TOKEN.fechaPar)
         self.consome(TOKEN.ptoVirg)
         codigo = 'print(' + codigo + ')\n'
@@ -547,7 +544,9 @@ class Sintatico:
             self.consome(TOKEN.virg)
             arg, codigo = self.out()
             restoArgs, restoCodigo = self.restoListaOuts()
-            return [arg] + restoArgs, ', ' + codigo + restoCodigo
+            print('AAAAAAAAAAAAAAAAAAAAAAAa', restoCodigo)
+            print('BBBBBBBBBBBBBBBBBBBBBBBBB', codigo)
+            return [arg] + restoArgs, ', '  + codigo + restoCodigo
         else:
             return [], ''
         
@@ -578,7 +577,7 @@ class Sintatico:
        if self.tokenLido[0] == TOKEN.OR:
            self.consome(TOKEN.OR)
            tipoConj, codigo = self.conj()
-           tipoAux = self.semantico.checarOperacao(tipo, tipoConj, TOKEN.OR)
+           tipoAux = self.semantico.checaOperacao(tipo, tipoConj, TOKEN.OR)
            tipoRestoDisj, codigo2 = self.restoDisj(tipoAux)
            return tipoRestoDisj, ' or ' + codigo + codigo2
        else:
@@ -595,7 +594,7 @@ class Sintatico:
         if self.tokenLido[0] == TOKEN.AND:
             self.consome(TOKEN.AND)
             tipoNao, codigo = self.nao()
-            tipoAux = self.semantico.checarOperacao(tipo, tipoNao, TOKEN.AND)
+            tipoAux = self.semantico.checaOperacao(tipo, tipoNao, TOKEN.AND)
             tipoRestoConj, codigo2 = self.restoConj(tipoAux)
             return tipoRestoConj, ' and ' + codigo + codigo2
         else:
@@ -622,7 +621,7 @@ class Sintatico:
         if self.tokenLido[0] == TOKEN.oprel:
             salvarOprel = self.consome(TOKEN.oprel)
             tipoSoma, codigo = self.soma()
-            tipoAux = self.semantico.checarOperacao(tipo, tipoSoma, TOKEN.oprel)
+            tipoAux = self.semantico.checaOperacao(tipo, tipoSoma, TOKEN.oprel)
             # TODO
             return tipoAux, ' ' + salvarOprel[1] + ' ' + codigo
         else:
@@ -639,13 +638,13 @@ class Sintatico:
         if self.tokenLido[0] == TOKEN.mais:
             self.consome(TOKEN.mais)
             tipoMult, codigo = self.mult()
-            tipoAux = self.semantico.checarOperacao(tipo, tipoMult, TOKEN.mais)
+            tipoAux = self.semantico.checaOperacao(tipo, tipoMult, TOKEN.mais)
             tipoRestoSoma, codigo2 = self.restoSoma(tipoAux)
             return tipoRestoSoma, ' + ' + codigo + codigo2
         elif self.tokenLido[0] == TOKEN.menos:
             self.consome(TOKEN.menos)
             tipoMult, codigo = self.mult()
-            tipoAux = self.semantico.checarOperacao(tipo, tipoMult, TOKEN.menos)
+            tipoAux = self.semantico.checaOperacao(tipo, tipoMult, TOKEN.menos)
             tipoRestoSoma, codigo2 = self.restoSoma(tipoAux)
             return tipoRestoSoma, ' - ' + codigo + codigo2
         else:
@@ -655,26 +654,26 @@ class Sintatico:
         # <mult> -> <uno> <restoMult>
         tipo, codigo = self.uno()
         tipoRestoMult, codigo2 = self.restoMult(tipo)
-        return tipoRestoMult, codigo + codigo2
+        return tipoRestoMult, ''
         
     def restoMult(self, tipo):
         # <restoMult> -> <restoMult> -> LAMBDA | / <uno> <restoMult> | * <uno> <restoMult> | % <uno> <restoMult>
         if self.tokenLido[0] == TOKEN.divide:
             self.consome(TOKEN.divide)
             tipoUno, codigo = self.uno()
-            tipoAux = self.semantico.checarOperacao(tipo, tipoUno, TOKEN.divide)
+            tipoAux = self.semantico.checaOperacao(tipo, tipoUno, TOKEN.divide)
             tipoRestoMult, codigo2 = self.restoMult(tipoAux)
             return tipoRestoMult, ' / ' + codigo + codigo2
         elif self.tokenLido[0] == TOKEN.multiplica:
             self.consome(TOKEN.multiplica)
             tipoUno, codigo = self.uno()
-            tipoAux = self.semantico.checarOperacao(tipo, tipoUno, TOKEN.multiplica)
+            tipoAux = self.semantico.checaOperacao(tipo, tipoUno, TOKEN.multiplica)
             tipoRestoMult, codigo2 = self.restoMult(tipoAux)
             return tipoRestoMult, ' * ' + codigo + codigo2
         elif self.tokenLido[0] == TOKEN.porcento:
             self.consome(TOKEN.porcento)
             tipoUno, codigo = self.uno()
-            tipoAux = self.semantico.checarOperacao(tipo, tipoUno, TOKEN.porcento)
+            tipoAux = self.semantico.checaOperacao(tipo, tipoUno, TOKEN.porcento)
             tipoRestoMult, codigo2 = self.restoMult(tipoAux)
             return tipoRestoMult, ' % ' + codigo + codigo2
         else:
@@ -689,7 +688,7 @@ class Sintatico:
         elif self.tokenLido[0] == TOKEN.menos:
             self.consome(TOKEN.menos)
             tipoUno, codigo = self.uno()
-            return tipoUno, ' - ' + codigo
+            return tipoUno, ' - '
         else:
             tipo, codigo = self.folha()
             return tipo, codigo
@@ -699,21 +698,27 @@ class Sintatico:
         if self.tokenLido[0] == TOKEN.intVal:
             codigo = self.consome(TOKEN.intVal)
             return (TOKEN.INT, False), codigo
+        
         elif self.tokenLido[0] == TOKEN.floatVal:
             codigo = self.consome(TOKEN.floatVal)
             return (TOKEN.FLOAT, False), codigo
+        
         elif self.tokenLido[0] == TOKEN.stringVal:
             codigo = self.consome(TOKEN.stringVal)
             return (TOKEN.string, False), codigo
+        
         elif self.tokenLido[0] == TOKEN.ident or self.tokenLido[0] == TOKEN.abreCol:
             tokenLido = self.tokenLido
             result = self.semantico.consulta(tokenLido)
+            
             if tokenLido[0] == TOKEN.abreCol:
                 tipoLista, codigo = self.lista()
                 return tipoLista, codigo
+            
             elif result is None:
                 msg = f"Variavel {tokenLido[1]} nao declarada"
                 self.semantico.erroSemantico(tokenLido, msg)
+            
             else:
                 (tipo, info) = result
                 if tipo == TOKEN.FUNCTION:
@@ -722,6 +727,7 @@ class Sintatico:
                 else:
                     tipoLista, codigo = self.lista()
                     return tipoLista, codigo
+                
         else:
             self.consome(TOKEN.abrePar)
             tipoExp, codigo = self.exp()
@@ -739,7 +745,7 @@ class Sintatico:
         
         if salvarFunction[1] in ['trunc', 'len', 'str2num', 'num2str']:
             infos = argsFunction[1][:-1]
-            params, msgAux = self.semantico.verificarParametros(infos, args)
+            params, msgAux = self.semantico.verificaParametros(infos, args)
             
             if params is False:
                 msg = f'ERROR: Funcao {salvarFunction[1]} recebeu parametros invalidos'
@@ -751,7 +757,7 @@ class Sintatico:
             return retorno, codigoFunction + '(' + codigo + ')'
         else:
             infos = [arg[1] for arg in argsFunction[1][:-1]]
-            params, msgAux = self.semantico.verificarParametros(infos, args)
+            params, msgAux = self.semantico.verificaParametros(infos, args)
             
             if params is False:
                 msg = f'ERROR: Funcao {salvarFunction[1]} recebeu parametros invalidos'
@@ -797,7 +803,7 @@ class Sintatico:
         if self.tokenLido[0] == TOKEN.doisPontos:
             self.consome(TOKEN.doisPontos)
             tipoExp, codigo = self.exp()
-            tipoAux = self.semantico.checarOperacao(tipo, tipoExp, TOKEN.doisPontos)
+            tipoAux = self.semantico.checaOperacao(tipo, tipoExp, TOKEN.doisPontos)
             return tipoAux, ': ' + codigo
         else:
             return tipo, ''
@@ -812,13 +818,13 @@ class Sintatico:
         
 # ------------------------------------------------ GERAÇÃO DE CÓDIGO ------------------------------------------------ #
 
-    def verificar_import_math(self):
+    def verificarImportMath(self):
         fonte = re.sub(r'#.*', '', self.lexico.fonte)
         pattern = r'(?<=\s|[+\-*/%=<>,;!():])trunc\('  # Expressão Regular que controla o import math (math.trunc())
         return 'import math\n\n\n' if re.findall(pattern, fonte) else ''
 
     def gerar_codigo_inicial(self):
-        codigo_inicial = self.verificar_import_math()
+        codigo_inicial = self.verificarImportMath()
 
         codigo_inicial += \
             'class ' + 'Program' + ':\n' + \

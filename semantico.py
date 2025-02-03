@@ -8,76 +8,38 @@ from ttoken import TOKEN
 class Semantico:
 
     def __init__(self, nomeAlvo):
+        
         self.tabelaSimbolos = list()
         self.tabelaSimbolos = [dict()] + self.tabelaSimbolos
         self.alvo = open(nomeAlvo, "wt")
-        
-        self.declara((TOKEN.ident, 'len', None, None),
+        self.declara((TOKEN.ident,'len',0,0),
                      (TOKEN.FUNCTION, [(None,True), (TOKEN.INT, False)]))
-        self.declara((TOKEN.ident, 'num2str', None, None),
+        self.declara((TOKEN.ident,'num2str',0,0),
                      (TOKEN.FUNCTION, [(TOKEN.FLOAT,False), (TOKEN.string, False)]))
-        self.declara((TOKEN.ident, 'str2num', None, None),
+        self.declara((TOKEN.ident,'str2num',0,0),
                      (TOKEN.FUNCTION, [(TOKEN.string,False), (TOKEN.FLOAT, False)]))
-        self.declara((TOKEN.ident, 'trunc', None, None),
+        self.declara((TOKEN.ident,'trunc',0,0),
                      (TOKEN.FUNCTION, [(TOKEN.FLOAT,False), (TOKEN.INT, False)]))
-        
         self.retorno = False
-        
-        self.tipos = {
-            (TOKEN.INT, False): 'int',
-            (TOKEN.FLOAT, False): 'float',
-            (TOKEN.string, False): 'str',
-            (TOKEN.INT, True): 'int [list]',
-            (TOKEN.FLOAT, True): 'float [list]',
-            (TOKEN.string, True): 'str [list]',
-            (None, True): '[list]',
-            None: 'None'
-        }
-        
-        self.tiposFuncoes = {
-            (TOKEN.INT, False): ' -> int',
-            (TOKEN.FLOAT, False): ' -> float',
-            (TOKEN.string, False): ' -> str',
-            (TOKEN.INT, True): ' -> list ',
-            (TOKEN.FLOAT, True): ' -> list ',
-            (TOKEN.string, True): ' -> list ',
-            (None, True): ' -> list ',
-            None: ' -> None'
-        }
-        
-        self.funcoesNativas = {
-            'trunc': 'math.trunc',
-            'len': 'len',
-            'str2num': 'float',
-            'num2str': 'str'
-        }
-        
         self.operacoes = {
-            # int - int
-            ((TOKEN.INT, False), TOKEN.mais, (TOKEN.INT)): (TOKEN.INT, False),
-            ((TOKEN.INT, False), TOKEN.menos, (TOKEN.INT)): (TOKEN.INT, False),
-            ((TOKEN.INT, False), TOKEN.multiplica, (TOKEN.INT)): (TOKEN.INT, False),
-            ((TOKEN.INT, False), TOKEN.divide, (TOKEN.INT)): (TOKEN.INT, False),
-            
-            # int - float
-            ((TOKEN.INT, False), TOKEN.mais, (TOKEN.FLOAT)): (TOKEN.FLOAT, False),
-            ((TOKEN.INT, False), TOKEN.menos, (TOKEN.FLOAT)): (TOKEN.FLOAT, False),
-            ((TOKEN.INT, False), TOKEN.multiplica, (TOKEN.FLOAT)): (TOKEN.FLOAT, False),
-            ((TOKEN.INT, False), TOKEN.divide, (TOKEN.FLOAT)): (TOKEN.FLOAT, False),
-            
-            # float - float
-            ((TOKEN.FLOAT, False), TOKEN.mais, (TOKEN.FLOAT)): (TOKEN.FLOAT, False),
-            ((TOKEN.FLOAT, False), TOKEN.menos, (TOKEN.FLOAT)): (TOKEN.FLOAT, False),
-            ((TOKEN.FLOAT, False), TOKEN.multiplica, (TOKEN.FLOAT)): (TOKEN.FLOAT, False),
-            ((TOKEN.FLOAT, False), TOKEN.divide, (TOKEN.FLOAT)): (TOKEN.FLOAT, False),
-            
-            # float - int
-            ((TOKEN.FLOAT, False), TOKEN.mais, (TOKEN.INT)): (TOKEN.FLOAT, False),
-            ((TOKEN.FLOAT, False), TOKEN.menos, (TOKEN.INT)): (TOKEN.FLOAT, False),
-            ((TOKEN.FLOAT, False), TOKEN.multiplica, (TOKEN.INT)): (TOKEN.FLOAT, False),
-            ((TOKEN.FLOAT, False), TOKEN.divide, (TOKEN.INT)): (TOKEN.FLOAT, False),
-            
-            # operacao listas
+            ((TOKEN.INT, False), TOKEN.mais, (TOKEN.INT, False)): (TOKEN.INT, False),
+            ((TOKEN.INT, False), TOKEN.menos, (TOKEN.INT, False)): (TOKEN.INT, False),
+            ((TOKEN.INT, False), TOKEN.multiplica, (TOKEN.INT, False)): (TOKEN.INT, False),
+            ((TOKEN.INT, False), TOKEN.divide, (TOKEN.INT, False)): (TOKEN.INT, False),
+            ((TOKEN.INT, False), TOKEN.porcento, (TOKEN.INT, False)): (TOKEN.INT, False),
+            ((TOKEN.FLOAT, False), TOKEN.mais, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.FLOAT, False), TOKEN.menos, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.FLOAT, False), TOKEN.multiplica, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.FLOAT, False), TOKEN.divide, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.string, False), TOKEN.mais, (TOKEN.string, False)): (TOKEN.string, False),
+            ((TOKEN.INT, False), TOKEN.mais, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.INT, False), TOKEN.menos, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.INT, False), TOKEN.multiplica, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.INT, False), TOKEN.divide, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.FLOAT, False), TOKEN.mais, (TOKEN.INT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.FLOAT, False), TOKEN.menos, (TOKEN.INT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.FLOAT, False), TOKEN.multiplica, (TOKEN.INT, False)): (TOKEN.FLOAT, False),
+            ((TOKEN.FLOAT, False), TOKEN.divide, (TOKEN.INT, False)): (TOKEN.FLOAT, False),
             ((TOKEN.INT, True), TOKEN.mais, (TOKEN.INT, True)): (TOKEN.INT, True),
             ((TOKEN.FLOAT, True), TOKEN.mais, (TOKEN.FLOAT, True)): (TOKEN.FLOAT, True),
             ((TOKEN.string, True), TOKEN.mais, (TOKEN.string, True)): (TOKEN.string, True),
@@ -89,55 +51,18 @@ class Semantico:
             ((None, True), TOKEN.mais, (TOKEN.INT, True)): (TOKEN.INT, True),
             ((None, True), TOKEN.mais, (TOKEN.FLOAT, True)): (TOKEN.FLOAT, True),
             ((None, True), TOKEN.mais, (TOKEN.string, True)): (TOKEN.string, True),
-            
-            # # lista: int - int
-            # ((TOKEN.INT, True), TOKEN.mais, (TOKEN.INT)): (TOKEN.INT, True),
-            # ((TOKEN.INT, True), TOKEN.menos, (TOKEN.INT)): (TOKEN.INT, True),
-            # ((TOKEN.INT, True), TOKEN.multiplica, (TOKEN.INT)): (TOKEN.INT, True),
-            # ((TOKEN.INT, True), TOKEN.divide, (TOKEN.INT)): (TOKEN.INT, True),
-            
-            # # lista: int - float
-            # ((TOKEN.INT, True), TOKEN.mais, (TOKEN.FLOAT)): (TOKEN.FLOAT, True),
-            # ((TOKEN.INT, True), TOKEN.menos, (TOKEN.FLOAT)): (TOKEN.FLOAT, True),
-            # ((TOKEN.INT, True), TOKEN.multiplica, (TOKEN.FLOAT)): (TOKEN.FLOAT, True),
-            # ((TOKEN.INT, True), TOKEN.divide, (TOKEN.FLOAT)): (TOKEN.FLOAT, True),
-            
-            # # lista: float - float
-            # ((TOKEN.FLOAT, True), TOKEN.mais, (TOKEN.FLOAT)): (TOKEN.FLOAT, True),
-            # ((TOKEN.FLOAT, True), TOKEN.menos, (TOKEN.FLOAT)): (TOKEN.FLOAT, True),
-            # ((TOKEN.FLOAT, True), TOKEN.multiplica, (TOKEN.FLOAT)): (TOKEN.FLOAT, True),
-            # ((TOKEN.FLOAT, True), TOKEN.divide, (TOKEN.FLOAT)): (TOKEN.FLOAT, True),
-            
-            # # lista: float - int
-            # ((TOKEN.FLOAT, True), TOKEN.mais, (TOKEN.INT)): (TOKEN.FLOAT, True),
-            # ((TOKEN.FLOAT, True), TOKEN.menos, (TOKEN.INT)): (TOKEN.FLOAT, True),
-            # ((TOKEN.FLOAT, True), TOKEN.multiplica, (TOKEN.INT)): (TOKEN.FLOAT, True),
-            # ((TOKEN.FLOAT, True), TOKEN.divide, (TOKEN.INT)): (TOKEN.FLOAT, True),            
-            
-            # string - string
-            ((TOKEN.string, False), TOKEN.mais, (TOKEN.string, False)): (TOKEN.string, False),
-            
-            # operador logico
             ((TOKEN.INT, False), TOKEN.OR, (TOKEN.INT, False)): (TOKEN.INT, False),
             ((TOKEN.INT, False), TOKEN.AND, (TOKEN.INT, False)): (TOKEN.INT, False),
-            
-            # operacao com dois pontos -> sub-lista
             ((TOKEN.INT, False), TOKEN.doisPontos, (TOKEN.INT, False)): (None, True),
-            
-            # operacoes relacionais (<, <=, ==, !=, >, >=)
             ((TOKEN.INT, False), TOKEN.oprel, (TOKEN.INT, False)): (TOKEN.INT, False),
             ((TOKEN.FLOAT, False), TOKEN.oprel, (TOKEN.FLOAT, False)): (TOKEN.INT, False),
             ((TOKEN.INT, False), TOKEN.oprel, (TOKEN.FLOAT, False)): (TOKEN.INT, False),
             ((TOKEN.FLOAT, False), TOKEN.oprel, (TOKEN.INT, False)): (TOKEN.INT, False),
             ((TOKEN.string, False), TOKEN.oprel, (TOKEN.string, False)): (TOKEN.INT, False),
-
-            # operacoes atribuicao
             ((TOKEN.INT, False), TOKEN.atrib, (TOKEN.INT, False)): (TOKEN.INT, False),
             ((TOKEN.FLOAT, False), TOKEN.atrib, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
             ((TOKEN.string, False), TOKEN.atrib, (TOKEN.string, False)): (TOKEN.string, False),
             ((TOKEN.FLOAT, False), TOKEN.atrib, (TOKEN.INT, False)): (TOKEN.FLOAT, False),
-
-            # lista: operacoes atribuicao
             ((TOKEN.INT, True), TOKEN.atrib, (TOKEN.INT, True)): (TOKEN.INT, True),
             ((TOKEN.FLOAT, True), TOKEN.atrib, (TOKEN.FLOAT, True)): (TOKEN.FLOAT, True),
             ((TOKEN.string, True), TOKEN.atrib, (TOKEN.string, True)): (TOKEN.string, True),
@@ -145,8 +70,6 @@ class Semantico:
             ((TOKEN.FLOAT, True), TOKEN.atrib, (None, True)): (TOKEN.FLOAT, True),
             ((TOKEN.string, True), TOKEN.atrib, (None, True)): (TOKEN.string, True),
             ((TOKEN.FLOAT, True), TOKEN.atrib, (TOKEN.INT, True)): (TOKEN.FLOAT, True),
-
-            # operacoes verificar tipos iguais
             ((TOKEN.INT, False), TOKEN.virg, (TOKEN.INT, False)): (TOKEN.INT, False),
             ((TOKEN.FLOAT, False), TOKEN.virg, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
             ((TOKEN.string, False), TOKEN.virg, (TOKEN.string, False)): (TOKEN.string, False),
@@ -154,6 +77,35 @@ class Semantico:
             ((TOKEN.FLOAT, False), TOKEN.virg, (TOKEN.INT, False)): (TOKEN.FLOAT, False),
         }
 
+        self.tipos_retorno = {
+            (TOKEN.INT, False): ' -> int',
+            (TOKEN.FLOAT, False): ' -> float',
+            (TOKEN.string, False): ' -> str',
+            (TOKEN.INT, True): ' -> list',
+            (TOKEN.FLOAT, True): ' -> list',
+            (TOKEN.string, True): ' -> list',
+            (None, True): ' -> list',
+            None: ' -> None',
+        }
+
+        self.funcoesNativas = {
+            'len': 'len',
+            'num2str': 'str',
+            'str2num': 'float',
+            'trunc': 'math.trunc',
+        }
+
+        self.tipos = {
+            (TOKEN.INT, False): 'int',
+            (TOKEN.FLOAT, False): 'float',
+            (TOKEN.string, False): 'str',
+            (TOKEN.INT, True): 'int [list]',
+            (TOKEN.FLOAT, True): 'float [list]',
+            (TOKEN.string, True): 'str [list]',
+            (None, True): '[list]',
+            None: 'None',
+        }
+        
     def finaliza(self):
         self.alvo.close()
 
@@ -163,14 +115,27 @@ class Semantico:
         print(f'{msg}')
         raise Exception
 
+    def retornoFuncao(self):
+        escopo = self.tabelaSimbolos[1]
+        ultimo_escopo = list(escopo.keys())[-1]
+        return ultimo_escopo, escopo[ultimo_escopo][1][-1][1] if escopo[ultimo_escopo] else None
+
     def gera(self, nivel, codigo):
-        identacao = ' ' * 4 * nivel
+        identacao = ' ' * 3 * nivel
         linha = identacao + codigo
         self.alvo.write(linha)
 
-    def declara(self, tokenAtual, tipo):
+    def declara(self, tokenAtual:tuple, tipo:tuple):
+        """ nome = lexema do ident
+            tipo = (base, lista)
+            base = int | float | strig | function | None # listas genericas
+            Se base in [int,float,string]
+                lista = boolean # True se o tipo for lista
+            else
+                Lista = lista com os tipos dos argumentos, mais tipo do retorno
+        """
         (token, nome, linha, coluna) = tokenAtual
-        if self.consulta(tokenAtual) is not None:
+        if not self.consulta(tokenAtual) is None:
             msg = f'Variavel {nome} redeclarada'
             self.erroSemantico(tokenAtual, msg)
         else:
@@ -182,71 +147,56 @@ class Semantico:
         for escopo in self.tabelaSimbolos:
             if nome in escopo:
                 return escopo[nome]
-        return None        
+        return None
 
-    def iniciaFuncao(self):
+    def iniciaFuncao(self, tokenAtual):
         self.retorno = False
         self.tabelaSimbolos = [dict()] + self.tabelaSimbolos
 
     def terminaFuncao(self):
         self.tabelaSimbolos = self.tabelaSimbolos[1:]
-
-    def checarOperacao(self, op1, op2, operador):
-        if (op1, operador, op2) in self.operacoes:
-            return self.operacoes[(op1, operador, op2)]
-        else:
-            return None
-        
-    def retornoFuncao(self):
-        escopo = self.tabelaSimbolos[0]
-        ultimo = list(escopo.keys())[-1]
-        tipoRetorno = escopo[ultimo][1][-1][1] if escopo[ultimo] else None
-        return ultimo, tipoRetorno
     
-    def verificarParametros(self, parametrosEsperados, parametrosPassados):
-        def formatarTipos(parametros):
-            return ', '.join(self.tipos[tipo] for tipo in parametros)
 
-        tipos_esperados = formatarTipos(parametrosEsperados)
-        tipos_passados = formatarTipos(parametrosPassados)
+    def checaOperacao(self, op1, op2 = None, operacao = None):
+        return self.operacoes.get((op1, operacao, op2), None)
+        
+    def verificaRetornoFuncao(self,token_atual, tipo_retorno):
+        if self.retorno is False and tipo_retorno is not None:
+            msg = f'O retorno esperado para a {token_atual[1]} é {tipo_retorno} mas foi encontrado "None"'
+            self.erroSemantico(token_atual, msg)
 
-        if len(parametrosEsperados) != len(parametrosPassados):
-            mensagem = (
-                f"Era esperado {len(parametrosEsperados)} parâmetro(s) - ({tipos_esperados}), "
-                f"mas veio {len(parametrosPassados)} parâmetro(s) - ({tipos_passados})!"
-            )
-            return False, mensagem
+    def verificaParametros(self, parametros_esperados, parametros_passados):
 
-        for tipo_esperado, tipo_passado in zip(parametrosEsperados, parametrosPassados):
-            if tipo_esperado == tipo_passado:
-                continue
+        esperados = ', '.join(self.tipos[tipo] for tipo in parametros_esperados)
+        passados = ', '.join(self.tipos[tipo] for tipo in parametros_passados)
 
-            if tipo_esperado == (None, True) and tipo_passado[1] is True:
-                continue
+        if len(parametros_esperados) != len(parametros_passados):
+            return False, (f'Era esperado {len(parametros_esperados)} parâmetro(s) - ({esperados}), '
+                           f'mas veio {len(parametros_passados)} parâmetro(s) - ({passados})!')
 
-            if tipo_esperado == (TOKEN.FLOAT, False) and tipo_passado == (TOKEN.INT, False):
-                continue
+        for tipo_esperado, tipo_passado in zip(parametros_esperados, parametros_passados):
 
-            return False, f"Era esperado ({tipos_esperados}), mas veio ({tipos_passados})!"
+            if tipo_esperado != tipo_passado:
+                if tipo_esperado == (None, True) and tipo_passado[1] is True:
+                    return True, None
+                elif tipo_esperado == (TOKEN.FLOAT, False) and tipo_passado == (TOKEN.INT, False):
+                    return True, None
+                else:
+                    return False, f'Era esperado ({esperados}), mas veio ({passados})!'
 
         return True, None
     
-    def verificaRetorno(self, tokenFuncao, tipoRetorno):
-        if self.retorno is False and tipoRetorno is not None:
-            msg = f'Função {tokenFuncao[1]} não retornou valor. Deveria retornar {self.tipos[tipoRetorno]}.'
-            self.erroSemantico(tokenFuncao, msg)
-            
-    def imprimirEscopo(self, escopo):
-        print()
-        for chave, valor in self.tabelaSimbolos[0].items():
-            print(f'Escopo {chave} -> {chave}, {valor}')
-            
-    def verificarMain(self):
-        tokenMain, padraoMain = (TOKEN.FUNCTION, 'main', None, None), (TOKEN.FUNCTION, [((0, 0, 0, 0), (TOKEN.INT, False))])
-        consulta = self.consulta(tokenMain)
+    
+    def verificaMain(self):
+        token_main, padrao_main = (TOKEN.FUNCTION, 'main', None, None), (TOKEN.FUNCTION, [((0, 0, 0, 0), (TOKEN.INT, False))])
+        consulta = self.consulta(token_main)
         if consulta is None:
-            self.erroSemantico(tokenMain, 'Função main não declarada.')
-        
-        if consulta != padraoMain:
-            self.erroSemantico(tokenMain, 'Função main não está no padrão correto.')
-            
+            msg = '[!] - ERRO -> Função \'main\' não declarada!'
+            self.erroSemantico(token_main, msg)
+
+        if consulta != padrao_main:
+            msg = ('[!] - ERRO -> Formato incorreto para função \'main\'!\n'
+                   'Formato esperado: function main() -> int')
+            self.erroSemantico(token_main, msg)
+
+
