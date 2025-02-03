@@ -3,39 +3,59 @@
 #
 # versao 1a (mar-2024)
 #---------------------------------------------------
+import inspect
 from lexico import TOKEN, Lexico
 from semantico import Semantico
+import re
 
 class Sintatico:
 
     def __init__(self, lexico):
         self.lexico = lexico
-        self.nomeAlvo = 'alvo.out'
+        self.identacao = 0
+        self.nomeAlvo = 'alvo.py'
         self.semantico = Semantico(self.nomeAlvo)
 
     def traduz(self):
         self.tokenLido = self.lexico.getToken()
         try:
-            self.p()
+            self.prog()
             print('Traduzido com sucesso.')
-        except:
+        except Exception as e:
+            print('Erro na tradução.', e)
             pass
-        self.semantico.finaliza()
+        # self.semantico.finaliza()
 
-    def consome(self, tokenAtual):
+    def consome(self, tokenEsperado):
         (token, lexema, linha, coluna) = self.tokenLido
-        if tokenAtual == token:
+        tokenAnterior = self.tokenLido
+        
+        # for f in inspect.stack():
+        #     print(f.function)
+        
+        if tokenEsperado == token:
             self.tokenLido = self.lexico.getToken()
+            return tokenAnterior
         else:
             msgTokenLido = TOKEN.msg(token)
-            msgTokenAtual = TOKEN.msg(tokenAtual)
+            msgTokenEsperado = TOKEN.msg(tokenEsperado)
             print(f'Erro na linha {linha}, coluna {coluna}:')
             if token == TOKEN.erro:
                 msg = lexema
             else:
                 msg = msgTokenLido
-            print(f'Era esperado {msgTokenAtual} mas veio {msg}')
+            print(f'Era esperado {msgTokenEsperado} mas veio {msg}')
+            
             raise Exception
+        
+    def erro(self, tokensEsperados):
+        (token, lexema, linha, coluna) = self.tokenLido
+        if not token in tokensEsperados:
+            print(f'Erro na linha {linha}, coluna {coluna}:')
+            msgTokenLido = TOKEN.msg(token)
+            msgTokensEsperados = [TOKEN.msg(t) for t in tokensEsperados]
+            print(f'Era esperado {msgTokensEsperados} mas veio {msgTokenLido}')
+            raise Exception        
 
     def testaLexico(self):
         self.tokenLido = self.lexico.getToken()
@@ -45,336 +65,782 @@ class Sintatico:
             self.tokenLido = self.lexico.getToken()
             (token, lexema, linha, coluna) = self.tokenLido
 
-#-------- segue a gramatica -----------------------------------------
-    def p(self):
-        # <p> --> program ident ; <declaracoes> <corpo> .
-        self.consome(TOKEN.PROGRAM)
-        lexema = self.tokenLido[1]
-        self.consome(TOKEN.ident)
-        self.consome(TOKEN.ptoVirg)
-        self.semantico.gera(0, '# Codigo gerado pelo compilador Calc\n')
-        nomeClasse = 'Prog' + lexema
-        codigoInicial = \
-            'class ' + nomeClasse + ':\n' + \
-            '    def __init__(self):\n' + \
-            '        pass\n'
-
-        self.semantico.gera(0, codigoInicial)
-        self.declaracoes()
-        self.corpo()
-        self.consome(TOKEN.pto)
-        codigoFinal = \
-            'if __name__ == \'__main__\':\n' + \
-            '    _prog = ' + nomeClasse + '()\n' + \
-            '    -prog._declaracoes()\n' + \
-            '    _prog._corpo()'
-        self.semantico.gera(0, codigoFinal)
-
-    def declaracoes(self):
-        # < declaracoes > -> LAMBDA | var <listavars>;
-        if self.tokenLido[0] == TOKEN.VAR:
-            self.consome(TOKEN.VAR)
-            codigo = 'def _declaracoes(self):\n'
-            self.semantico.gera(1, codigo)
-            self.listavars()
-            self.consome(TOKEN.ptoVirg)
-        else:
-            self.semantico.gera(1, 'def _declaracoes(self):\n')
-            self.semantico.gera(2, 'pass\n')
-
-    def listavars(self):
-        # <listavars> -> ident <restoListavars>
-        salva = self.tokenLido # salva possivel ident
-        self.consome(TOKEN.ident)
-        nomeVar = salva[1]
-        self.semantico.gera(2, 'self.'+nomeVar+' = 0 \n')
-        self.semantico.declara(salva)
-        self.restoListavars()
-
-    def restoListavars(self):
-        # <restoListavars> -> LAMBDA | , <listavars>
-        if self.tokenLido[0] == TOKEN.virg:
-            self.consome(TOKEN.virg)
-            self.listavars()
+# ----------------------------------------- GRAMÁTICA -----------------------------------------
+    def prog(self):
+        # <prog> -> <funcao> <RestoFuncoes>
+        self.gerar_codigo_inicial()
+        self.funcao()
+        self.restoFuncoes()
+        self.semantico.verificarMain()
+        self.consome(TOKEN.eof)
+        self.gerar_codigo_final()
+        
+    def restoFuncoes(self):
+        # <RestoFuncoes> -> <funcao> <RestoFuncoes> | LAMBDA
+        if self.tokenLido[0] == TOKEN.FUNCTION:
+            self.funcao()
+            self.restoFuncoes()
         else:
             pass
-
+        
+    def funcao(self):
+        # <funcao> -> function ident ( <params> ) <tipoResultado> <corpo>
+        self.consome(TOKEN.FUNCTION)
+        IDENT = self.consome(TOKEN.ident)
+        self.consome(TOKEN.abrePar)
+        ARGS, codigoUm = self.params()
+        self.consome(TOKEN.fechaPar)
+        RETURN, codigoDois = self.tipoResultado()
+        self.semantico.declara(IDENT, (TOKEN.FUNCTION, ARGS + RETURN))
+        self.semantico.iniciaFuncao()
+        
+        for arg in ARGS:
+            (tt, (tipo, info)) = arg
+            self.semantico.declara(tt, (tipo, info))
+            
+        codigo = 'def ' + IDENT[1] + '(self' + codigoUm + '):' + codigoDois + ':\n'
+        self.semantico.gera(1, codigo)
+        
+        self.corpo()
+        self.semantico.verificaRetorno(IDENT, RETURN[0][1])
+        self.semantico.terminaFuncao()
+        
+    def tipoResultado(self):
+        # <tipoResultado> -> LAMBDA | -> <tipo>
+        if self.tokenLido[0] == TOKEN.ARROW:
+            self.consome(TOKEN.ARROW)
+            tipo = self.tipo()
+        else:
+            tipo = None
+        randomToken = (0, 0, 0, 0)
+        return [(randomToken, tipo)], self.semantico.tiposFuncoes[tipo]
+        
+    def params(self):
+        # <params> -> <tipo> ident <restoParams> | LAMBDA
+        if self.tokenLido[0] in [TOKEN.INT, TOKEN.string, TOKEN.FLOAT]:
+            tipo = self.tipo()
+            IDENT = self.consome(TOKEN.ident)
+            params, codigo = self.restoParams()
+            tipoArgs = [(IDENT, tipo)] + params
+            return tipoArgs, ', ' + IDENT[1] + codigo
+        else:
+            return [], ''
+        
+    def restoParams(self):
+        # <restoParams> -> LAMBDA | , <tipo> ident <restoParams> 
+        if self.tokenLido[0] == TOKEN.virg:
+            self.consome(TOKEN.virg)
+            tipo = self.tipo()
+            IDENT = self.consome(TOKEN.ident)
+            tipoParam = (IDENT, tipo)
+            resto, codigo = self.restoParams()
+            tiposArgs = [tipoParam] + resto
+            return tiposArgs, ', ' + IDENT[1] + codigo
+        else:
+            return [], ''
+        
     def corpo(self):
-        # <corpo> -> begin <cons> end
+        # <corpo> -> begin <declaracoes> <calculo> end
         self.consome(TOKEN.BEGIN)
-        self.semantico.gera(1, 'def _corpo(self):\n')
         self.identacao = 2
-        self.cons()
+        self.declaracoes()
+        self.calculo()
         self.consome(TOKEN.END)
+        self.semantico.gera(self.identacao, '\n')
+        
+    def declaracoes(self):
+        # <declaracoes> -> <declara> <declaracoes> | LAMBDA
+        if self.tokenLido[0] in [TOKEN.INT, TOKEN.string, TOKEN.FLOAT]:
+            self.declara()
+            self.declaracoes()
+        else:
+            pass
+        
+    def declara(self):
+        # <declara> -> <tipo> <idents> ;
+        tipo = self.tipo()
+        salvar_idents = self.idents()
+        self.consome(TOKEN.ptoVirg)
 
-    def cons(self):
-        # <cons> -> LAMBDA | <com> <cons>
+        for identificador in salvar_idents:
+            self.semantico.declara(identificador, tipo)
+
+        if tipo == (TOKEN.INT, False):
+            self.gerar_codigo_declaracoes(salvar_idents, '0')
+        elif tipo == (TOKEN.FLOAT, False):
+            self.gerar_codigo_declaracoes(salvar_idents, '0.0')
+        elif tipo == (TOKEN.string, False):
+            self.gerar_codigo_declaracoes(salvar_idents, '""')
+        elif tipo[1] is True:
+            self.gerar_codigo_declaracoes(salvar_idents, '[]')
+        
+    def idents(self):
+        # <idents> -> ident <restoIdents>
+        IDENT = self.consome(TOKEN.ident)
+        resto = self.restoIdents()
+        return [IDENT] + resto
+        
+    def restoIdents(self):
+        # <restoIdents> -> , ident <restoIdents> | LAMBDA 
+        if self.tokenLido[0] == TOKEN.virg:
+            self.consome(TOKEN.virg)
+            IDENT = self.consome(TOKEN.ident)
+            return [IDENT] + self.restoIdents()
+        else:
+            return []
+        
+    def tipo(self):
+        # <tipo> -> string <opcLista> | int <opcLista> | float <opcLista> 
+        if self.tokenLido[0] == TOKEN.string:
+            self.consome(TOKEN.string)
+            opcLista = self.opcLista()
+            tipo = TOKEN.string
+        elif self.tokenLido[0] == TOKEN.INT:
+            self.consome(TOKEN.INT)
+            opcLista = self.opcLista()
+            tipo = TOKEN.INT
+        elif self.tokenLido[0] == TOKEN.FLOAT:
+            self.consome(TOKEN.FLOAT)
+            opcLista = self.opcLista()
+            tipo = TOKEN.FLOAT
+        else:
+            self.erro([TOKEN.string, TOKEN.INT, TOKEN.FLOAT])
+        return tipo, opcLista
+            
+    def opcLista(self):
+        # <opcLista> -> [ list ] | LAMBDA
+        if self.tokenLido[0] == TOKEN.abreCol:
+            self.consome(TOKEN.abreCol)
+            self.consome(TOKEN.LIST)
+            self.consome(TOKEN.fechaCol)
+            return True
+        else:
+            return False
+        
+    # def p(self):
+    #     self.consome(TOKEN.BEGIN)
+    #     lexema = self.tokenLido[1]
+    #     self.calculo()
+    #     self.consome(TOKEN.END)
+    #     self.consome(TOKEN.eof)
+
+    def calculo(self):
+        # <calculo> -> LAMBDA | <com> <calculo>
         entrou = False
-        while self.tokenLido[0] in [TOKEN.ident,
-            TOKEN.IF, TOKEN.WHILE, TOKEN.READ, TOKEN.PRINT]:
+        while self.tokenLido[0] in [TOKEN.ident, TOKEN.IF, TOKEN.WRITE, 
+                                 TOKEN.READ, TOKEN.abreChave, TOKEN.WHILE, 
+                                 TOKEN.FOR, TOKEN.RETURN]:
             self.com()
             entrou = True
         if not entrou:
             self.semantico.gera(self.identacao, 'pass\n')
-
+        
     def com(self):
-        # <com> -> <atrib> | <if> | <while> | <ler> | <escrever> | <bloco>
+        # <com> -> <atrib>|<if>|<leitura>|<impressao>|<bloco>|<for>|<while>|<retorna>|<call>
         if self.tokenLido[0] == TOKEN.ident:
-            self.atrib()
+            IDENT = self.tokenLido
+            tipoIdent = self.semantico.consulta(IDENT)
+            if tipoIdent is None:
+                msg = f'Variavel {IDENT[1]} nao declarada'
+                self.semantico.erroSemantico(IDENT, msg)
+            else:
+                (tipo, info) = tipoIdent
+                if tipo == TOKEN.FUNCTION:
+                    _, codigo = self.call()
+                    self.consome(TOKEN.ptoVirg)
+                    codigo = codigo + '\n'
+                    self.semantico.gera(self.identacao, codigo)
+                else:
+                    self.atrib()
         elif self.tokenLido[0] == TOKEN.IF:
-            self.se()
-        elif self.tokenLido[0] == TOKEN.WHILE:
-            self.enquanto()
+            self.IF()
+        elif self.tokenLido[0] == TOKEN.WRITE:
+            self.impressao()
         elif self.tokenLido[0] == TOKEN.READ:
-            self.ler()
-        elif self.tokenLido[0] == TOKEN.PRINT:
-            self.escrever()
-        else:
+            self.leitura()
+        elif self.tokenLido[0] == TOKEN.abreChave:
             self.bloco()
-
-    def atrib(self):
-        # <atrib> -> ident = <exp> ;
-        lexema = self.tokenLido[1]
-        self.consome(TOKEN.ident)
-        self.consome(TOKEN.atrib)
-        codigo = self.exp()
+        elif self.tokenLido[0] == TOKEN.FOR:
+            self.FOR()
+        elif self.tokenLido[0] == TOKEN.WHILE:
+            self.WHILE()
+        elif self.tokenLido[0] == TOKEN.RETURN:
+            self.retorna()            
+        else:
+            self.erro([TOKEN.ident, TOKEN.IF, TOKEN.WRITE, TOKEN.READ, TOKEN.abreChave, TOKEN.FOR, TOKEN.WHILE, TOKEN.RETURN])
+            
+    def retorna(self):
+        # <retorna> -> return <expOpc> ;
+        RETURN = self.consome(TOKEN.RETURN)
+        tipoExp, codigo = self.expOpc()
+        
+        funcao, tipoRetorno = self.semantico.retornoFuncao()
+        
+        if tipoRetorno != tipoExp:
+            msg = f'Funcao {funcao} - Tipo de retorno invalido. Esperado {tipoRetorno}, recebido {tipoExp}'
+            self.semantico.erroSemantico(RETURN, msg)
+        
+        self.semantico.retorno = True
         self.consome(TOKEN.ptoVirg)
-        self.semantico.gera(self.identacao, lexema + ' = ' + codigo + '\n')
-
-    def se(self):
-        # <if> -> if ( <exp> ) <com> <elseopc>
-        self.consome(TOKEN.IF)
+        codigo = 'return ' + codigo + '\n'
+        self.semantico.gera(self.identacao, codigo)
+        
+    def expOpc(self):
+        # <expOpc> -> LAMBDA | <exp>
+        if self.tokenLido[0] in [TOKEN.INT, TOKEN.ident, 
+                                 TOKEN.abrePar, TOKEN.FLOAT, 
+                                 TOKEN.NOT, TOKEN.mais, 
+                                 TOKEN.menos, TOKEN.string]:
+            tipoExp, codigo = self.exp()
+            return tipoExp, codigo
+        else:
+            return None, ''
+        
+    def WHILE(self):
+        # <while> -> while ( <exp> ) <com>
+        IDENT = self.consome(TOKEN.WHILE)
         self.consome(TOKEN.abrePar)
-        codigo = self.exp()
+        tipoExp, codigo = self.exp()
+        
+        if tipoExp != (TOKEN.INT, False):
+            msg = f'ERROR: While esperava parametro inteiro, mas recebeu {tipoExp}'
+            self.semantico.erroSemantico(IDENT, msg)
+        
         self.consome(TOKEN.fechaPar)
-        self.semantico.gera(self.identacao, 'if ' + codigo + ':\n')
-        self.identacao += 1
+        codigo = 'while ' + codigo + ':\n'
+        self.semantico.gera(self.identacao, codigo)
+        self.identacao = self.identacao + 1
         self.com()
-        self.identacao -= 1
-        self.elseopc()
-
-    def elseopc(self):
-        # <elseopc> -> LAMBDA | else <com>
-        if self.tokenLido[0] == TOKEN.ELSE:
-            self.consome(TOKEN.ELSE)
-            self.semantico.gera(self.identacao, 'else: \n')
-            self.identacao += 1
+        self.identacao = self.identacao - 1
+        
+    def FOR(self):
+        # <for> -> for ident in <range> do <com>
+        self.consome(TOKEN.FOR)
+        if self.semantico.consulta(self.tokenLido) is not None:
+            IDENT = self.consome(TOKEN.ident)
+            tipoIdent = self.semantico.consulta(IDENT)
+            self.consome(TOKEN.IN)
+            tipoRange, codigo = self.range()
+            
+            if tipoIdent[0] != tipoRange[0] and tipoRange[1] is True:
+                msg = f'ERROR: Variavel {IDENT[1]} e range de tipos diferentes'
+                self.semantico.erroSemantico(IDENT, msg)
+            elif tipoIdent != (TOKEN.INT, False) and tipoRange == (TOKEN.INT, False):
+                msg = f'ERROR: Variavel {IDENT[1]} deve ser do tipo inteiro'
+                self.semantico.erroSemantico(IDENT, msg)
+            
+            self.consome(TOKEN.DO)
+            codigo = 'for ' + IDENT[1] + ' in ' + codigo + ':\n'
+            self.semantico.gera(self.identacao, codigo)
+            self.identacao = self.identacao + 1
             self.com()
-            self.identacao -= 1
+            self.identacao = self.identacao - 1
         else:
-            pass
-
-    def bloco(self):
-        # <bloco> -> { <cons> }
-        self.consome(TOKEN.abreChave)
-        #self.identacao += 1
-        self.cons()
-        self.consome(TOKEN.fechaChave)
-        #self.identacao -= 1
-
-    def ler(self):
-        # <ler> -> read ( string , ident ) ;
-        self.consome(TOKEN.READ)
-        self.consome(TOKEN.abrePar)
-        prompt = self.tokenLido[1]
-        self.consome(TOKEN.string)
-        self.consome(TOKEN.virg)
-        variavel = self.tokenLido[1]
-        self.consome(TOKEN.ident)
-        self.consome(TOKEN.fechaPar)
-        self.consome(TOKEN.ptoVirg)
-        self.semantico.gera(self.identacao,
-            variavel + ' = int(input(' + prompt + '))\n')
-
-    def escrever(self):
-        # <escrever> -> print ( <msg> ) ;
-        self.consome(TOKEN.PRINT)
-        self.consome(TOKEN.abrePar)
-        codigo = self.msg()
-        self.consome(TOKEN.fechaPar)
-        self.consome(TOKEN.ptoVirg)
-        self.semantico.gera(self.identacao, 'print(' + codigo + ')\n')
-
-    def msg(self):
-        # <msg> -> <coisa> <restomsg>
-        parte1 = self.coisa()
-        parte2 = self.restomsg()
-        return parte1 + parte2
-
-    def coisa(self):
-        # <coisa> -> string | ident
-        lexema = self.tokenLido[1]
-        if self.tokenLido[0] == TOKEN.string:
-            self.consome(TOKEN.string)
+            msg = f'ERROR: Variavel {self.tokenLido[1]} nao declarada'
+            self.semantico.erroSemantico(self.tokenLido, msg)
+        
+    def range(self):
+        # <range> -> <lista> | range ( <exp> , <exp> <opcRange> )
+        if self.tokenLido[0] == TOKEN.RANGE:
+            IDENT = self.consome(TOKEN.RANGE)
+            self.consome(TOKEN.abrePar)
+            tipoExp, codigo = self.exp()
+            
+            if tipoExp != (TOKEN.INT, False):
+                msg = 'O primeiro parametro deve ser um inteiro'
+                self.semantico.erroSemantico(tipoExp, msg)
+            self.consome(TOKEN.virg)
+            
+            tipoExp2, codigo2 = self.exp()
+            if tipoExp2 != (TOKEN.INT, False):
+                msg = 'O segundo parametro deve ser um inteiro'
+                self.semantico.erroSemantico(tipoExp2, msg)
+            
+            tipoOpcRange, codigo3 = self.opcRange()
+            if tipoOpcRange != (TOKEN.INT, False) and tipoOpcRange is not None:
+                msg = 'O terceiro parametro deve ser um inteiro'
+                self.semantico.erroSemantico(tipoOpcRange, msg)
+                
+            self.consome(TOKEN.fechaPar)
+            codigo = 'range(' + codigo + ', ' + codigo2 + codigo3 + ')'
+            return (TOKEN.INT, False), codigo
         else:
-            self.consome(TOKEN.ident)
-        return lexema
-
-    def restomsg(self):
-        # <restomsg> -> LAMBDA | , <msg>
+            tipoLista, codigo = self.lista()
+            return tipoLista, codigo
+            
+    def lista(self):
+        # <lista> -> ident <opcIndice> | [ <elemLista> ] 
+        if self.tokenLido[0] == TOKEN.ident:
+            IDENT = self.tokenLido
+            tipoIdent = self.semantico.consulta(IDENT)
+            if tipoIdent is None:
+                msg = f'Variavel {IDENT[1]} nao declarada'
+                self.semantico.erroSemantico(IDENT, msg)
+            else:
+                self.consome(TOKEN.ident)
+                tipoOpcIndice, codigo = self.opcIndice(tipoIdent)
+                return tipoOpcIndice, IDENT[1] + codigo
+        else:
+            IDENT = self.consome(TOKEN.abreCol)
+            tipoElemLista, codigo = self.elemLista()
+            if tipoElemLista is None:
+                msg = f'ERROR: Lista deve conter elementos do mesmo tipo'
+                self.semantico.erroSemantico(IDENT, msg)
+            self.consome(TOKEN.fechaCol)
+            return tipoElemLista, '[' + codigo + ']'
+            
+    def elemLista(self):
+        # <elemLista> -> LAMBDA | <elem> <restoElemLista>
+        if self.tokenLido[0] in [TOKEN.intVal, TOKEN.ident, TOKEN.stringVal, TOKEN.floatVal]:
+                tipoElem, codigo = self.elem()
+                tipoRestoElem, codigo2 = self.restoElemLista(tipoElem)
+                if tipoRestoElem is not None:
+                    tipoRestoElem = (tipoRestoElem[0], True)
+                return tipoRestoElem, codigo + codigo2
+        else:
+            return (None, True), ''
+        
+    def restoElemLista(self, tipo):
+        # <restoElemLista> -> LAMBDA | , <elem> <restoElemLista>
         if self.tokenLido[0] == TOKEN.virg:
             self.consome(TOKEN.virg)
-            parte1 = self.msg()
-            return ',' + parte1
+            tipoElem, codigo = self.elem()
+            tipoElem = self.semantico.checarOperacao(tipo, tipoElem, TOKEN.virg)
+            tipoRestoElem, codigo2 = self.restoElemLista(tipoElem)
+            return tipoRestoElem, ', ' + codigo + codigo2
         else:
-            return ''
-
-    def enquanto(self):
-        # <while> -> while ( <exp> ) <com>
-        self.consome(TOKEN.WHILE)
+            return tipo, ''
+        
+    def elem(self):
+        # <elem> -> intVal | floatVal | strVal | ident 
+        if self.tokenLido[0] == TOKEN.intVal:
+            codigo = self.tokenLido[1]
+            self.consome(TOKEN.intVal)
+            return (TOKEN.INT, False), codigo
+        elif self.tokenLido[0] == TOKEN.floatVal:
+            codigo = self.tokenLido[1]
+            self.consome(TOKEN.floatVal)
+            return (TOKEN.FLOAT, False), codigo
+        elif self.tokenLido[0] == TOKEN.stringVal:
+            codigo = self.tokenLido[1]
+            self.consome(TOKEN.stringVal)
+            return (TOKEN.string, False), codigo
+        elif self.tokenLido[0] == TOKEN.ident:
+            if self.semantico.consulta(self.tokenLido) is not None:
+                IDENT = self.consome(TOKEN.ident)
+                tipoIdent = self.semantico.consulta(IDENT)
+                return tipoIdent, IDENT[1]
+            else:
+                msg = f'ERROR: Variavel {self.tokenLido[1]} nao declarada'
+                self.semantico.erroSemantico(self.tokenLido, msg)
+        
+    def opcRange(self):
+        # <opcRange> -> , <exp> | LAMBDA
+        if self.tokenLido[0] == TOKEN.virg:
+            self.consome(TOKEN.virg)
+            tipoExp, codigo = self.exp()
+            return tipoExp, ', ' + codigo
+        else:
+            return None, ''
+        
+    def atrib(self):
+        # <atrib> -> ident <opcIndice> = <exp> ;
+        if self.semantico.consulta(self.tokenLido) is None:
+            msg = f'ERROR: Variavel {self.tokenLido[1]} nao declarada'
+            self.semantico.erroSemantico(self.tokenLido, msg)
+        else:
+            IDENT = self.consome(TOKEN.ident)
+            tipoIdent = self.semantico.consulta(IDENT)
+            tipoOpcIndice, codigo = self.opcIndice(tipoIdent)
+            
+            self.consome(TOKEN.atrib)
+            tipoExp, codigo2 = self.exp()
+            
+            if self.semantico.checarOperacao(tipoOpcIndice, tipoExp, TOKEN.atrib) is None:
+                msg = f'ERROR: Atribuicao invalida'
+                self.semantico.erroSemantico(IDENT, msg)
+            
+            self.consome(TOKEN.ptoVirg)
+            codigo = IDENT[1] + codigo + ' = ' + codigo2 + '\n'
+            self.semantico.gera(self.identacao, codigo)
+        
+    def IF(self):
+        # <if> -> if ( <exp> ) then <com> <else_opc>
+        IDENT = self.consome(TOKEN.IF)
         self.consome(TOKEN.abrePar)
+        tipoExp, codigo = self.exp()
+        
+        if tipoExp != (TOKEN.INT, False):
+            msg = f'ERROR: If esperava parametro inteiro, mas recebeu {tipoExp}'
+            self.semantico.erroSemantico(IDENT, msg)
+            
         self.consome(TOKEN.fechaPar)
-        self.exp()
+        codigo = 'if ' + codigo + ':\n'
+        self.semantico.gera(self.identacao, codigo)
+        self.consome(TOKEN.THEN)
+        self.identacao = self.identacao + 1
         self.com()
-
-    def exp(self):
-        # <exp> -> <or>
-        codigo = self.ou()
-        return codigo
-
-    def ou(self):
-        # <or> -> <and> <restoOr>
-        parte1 = self.e()
-        parte2 = self.restoOr()
-        return parte1 + parte2
-
-    def restoOr(self):
-        # <restoOr> -> or <and> <restoOr> | LAMBDA
-        if self.tokenLido[0] == TOKEN.OR:
-            self.consome(TOKEN.OR)
-            parte1 = self.e()
-            parte2 = self.restoOr()
-            return ' or ' + parte1 + parte2
+        self.identacao = self.identacao - 1
+        self.elseOpc()
+        
+    def elseOpc(self):
+        # <else_opc> -> LAMBDA | else <com>
+        if self.tokenLido[0] == TOKEN.ELSE:
+            self.consome(TOKEN.ELSE)
+            codigo = 'else:\n'
+            self.semantico.gera(self.identacao, codigo)
+            self.identacao = self.identacao + 1
+            self.com()
+            self.identacao = self.identacao - 1
         else:
-            return ''
+            pass
+        
+    def leitura(self):
+        # <leitura> -> read ( string, ident );
+        IDENT = self.consome(TOKEN.READ)
+        self.consome(TOKEN.abrePar)
+        tipoExp, codigo = self.exp()
+        
+        if tipoExp != (TOKEN.string, False):
+            msg = f'ERROR: Read esperava parametro string, mas recebeu {tipoExp}'
+            self.semantico.erroSemantico(IDENT, msg)
+            
+        self.consome(TOKEN.virg)
+        tipoIdent = self.semantico.consulta(self.tokenLido)
+        salvarIdent = self.tokenLido[1]
+        
+        if tipoIdent is None:
+            msg = f'ERROR: Variavel {self.tokenLido[1]} nao declarada'
+            self.semantico.erroSemantico(self.tokenLido, msg)
+        else:
+            self.consome(TOKEN.ident)
+        self.consome(TOKEN.fechaPar)
+        self.consome(TOKEN.ptoVirg)
+        
+        if tipoIdent[1] is True:
+            msg = f'ERROR: Variavel {salvarIdent} e do tipo lista'
+            self.semantico.erroSemantico(IDENT, msg)
+            
+        tipoInput = self.semantico.tipos[tipoIdent]
+        codigo = salvarIdent + ' = ' + tipoInput + '(input(' + codigo + '))\n'
+        self.semantico.gera(self.identacao, codigo)
+        
+    def impressao(self):
+        # <impressao> -> write ( <lista_out> );
+        self.consome(TOKEN.WRITE)
+        self.consome(TOKEN.abrePar)
+        args, codigo = self.listaOut()
+        self.consome(TOKEN.fechaPar)
+        self.consome(TOKEN.ptoVirg)
+        codigo = 'print(' + codigo + ')\n'
+        self.semantico.gera(self.identacao, codigo)
+        
+    def listaOuts(self):
+        # <lista_outs> -> <out> <restoLista_outs>
+        args, codigo = self.out()
+        restoArgs, restoCodigo = self.restoListaOuts()
+        return [args] + restoArgs, codigo + restoCodigo
+    
+    def restoListaOuts(self):
+        # <restoLista_outs> -> LAMBDA | , <out> <restoLista_outs>
+        if self.tokenLido[0] == TOKEN.virg:
+            self.consome(TOKEN.virg)
+            arg, codigo = self.out()
+            restoArgs, restoCodigo = self.restoListaOuts()
+            return [arg] + restoArgs, ', ' + codigo + restoCodigo
+        else:
+            return [], ''
+        
+    def out(self):
+        # <out> -> <folha>
+        tipo, codigo = self.folha()
+        return tipo, codigo
+        
+    def bloco(self):
+        # <bloco> -> { <calculo> }
+        self.consome(TOKEN.abreChave)
+        self.calculo()
+        self.consome(TOKEN.fechaChave)
+    
+    def exp(self):
+        # <exp> -> <disj>
+        tipo, codigo = self.disj()
+        return tipo, codigo
+        
+    def disj(self):
+        # <disj> -> <conj> <restodisj>
+        tipo, codigo = self.conj()
+        tipoRestoDisj, codigo2 = self.restoDisj(tipo)
+        return tipoRestoDisj, codigo + codigo2
+        
+    def restoDisj(self, tipo):
+       # <restoDisj> -> LAMBDA | or <conj> <restoDisj>
+       if self.tokenLido[0] == TOKEN.OR:
+           self.consome(TOKEN.OR)
+           tipoConj, codigo = self.conj()
+           tipoAux = self.semantico.checarOperacao(tipo, tipoConj, TOKEN.OR)
+           tipoRestoDisj, codigo2 = self.restoDisj(tipoAux)
+           return tipoRestoDisj, ' or ' + codigo + codigo2
+       else:
+           return tipo, ''
 
-    def e(self):
-        # <and> -> <not> <restoAnd>
-        parte1 = self.nao()
-        parte2 = self.restoAnd()
-        return parte1 + parte2
-
-    def restoAnd(self):
-        # <restoAnd> -> and <not> <restoAnd> | LAMBDA
+    def conj(self):
+        # <conj> -> <nao> <restoConj>
+        tipo, codigo = self.nao()
+        tipoRestoConj, codigo2 = self.restoConj(tipo)
+        return tipoRestoConj, codigo + codigo2
+        
+    def restoConj(self, tipo):
+       # <restoDisj> -> LAMBDA | and <nao> <restoConj>
         if self.tokenLido[0] == TOKEN.AND:
             self.consome(TOKEN.AND)
-            parte1 = self.nao()
-            parte2 = self.restoAnd()
-            return ' and ' + parte1 + parte2
+            tipoNao, codigo = self.nao()
+            tipoAux = self.semantico.checarOperacao(tipo, tipoNao, TOKEN.AND)
+            tipoRestoConj, codigo2 = self.restoConj(tipoAux)
+            return tipoRestoConj, ' and ' + codigo + codigo2
         else:
-            return ''
-
+            return tipo, ''
+        
     def nao(self):
-        # <not> -> not <not> | <rel>
+        # <nao> -> not <nao> | <rel>
         if self.tokenLido[0] == TOKEN.NOT:
             self.consome(TOKEN.NOT)
-            parte1 = self.nao()
-            return ' not ' + parte1
+            tipo, codigo = self.nao()
+            return tipo, 'not ' + codigo
         else:
-            return self.rel()
-
+            tipo, codigo = self.rel()
+            return tipo, codigo
+            
     def rel(self):
-        # <rel> -> <uno> <restoRel>
-        parte1 = self.uno()
-        parte2 = self.restoRel()
-        return parte1 + parte2
-
-    def restoRel(self):
-        # <restoRel> -> LAMBDA | <oprel> <uno>
-        if self.tokenLido[0] in [TOKEN.igual, TOKEN.diferente, TOKEN.menor,
-                              TOKEN.menorIgual, TOKEN.maior, TOKEN.maiorIgual]:
-            parte1 = self.oprel()
-            parte2 = self.uno()
-            return parte1 + parte2
+        # <rel> -> <soma> <restoRel>
+        tipo, codigo = self.soma()
+        tipoResto, codigo2 = self.restoRel(tipo)
+        return tipoResto, codigo + codigo2
+        
+    def restoRel(self, tipo):
+        # <restoRel> -> LAMBDA | oprel <soma>
+        if self.tokenLido[0] == TOKEN.oprel:
+            salvarOprel = self.consome(TOKEN.oprel)
+            tipoSoma, codigo = self.soma()
+            tipoAux = self.semantico.checarOperacao(tipo, tipoSoma, TOKEN.oprel)
+            # TODO
+            return tipoAux, ' ' + salvarOprel[1] + ' ' + codigo
         else:
-            return ''
-
-    def oprel(self):
-        # <oprel> -> == | != | < | > | <= | >=
-        salva = ' ' + self.tokenLido[1] + ' '
-        if self.tokenLido[0] == TOKEN.igual:
-            self.consome(TOKEN.igual)
-        elif self.tokenLido[0] == TOKEN.diferente:
-            self.consome(TOKEN.diferente)
-        elif self.tokenLido[0] == TOKEN.menor:
-            self.consome(TOKEN.menor)
-        elif self.tokenLido[0] == TOKEN.maior:
-            self.consome(TOKEN.maior)
-        elif self.tokenLido[0] == TOKEN.menorIgual:
-            self.consome(TOKEN.menorIgual)
-        elif self.tokenLido[0] == TOKEN.maiorIgual:
-            self.consome(TOKEN.maiorIgual)
-        return salva
-
-    def uno(self):
-        # <uno> -> + <uno> | - <uno> | <soma>
-        if self.tokenLido[0] == TOKEN.mais:
-            self.consome(TOKEN.mais)
-            parte1 = self.uno()
-            return ' + ' + parte1
-        elif self.tokenLido[0] == TOKEN.menos:
-            self.consome(TOKEN.menos)
-            parte1 = self.uno()
-            return ' - ' + parte1
-        else:
-            return self.soma()
-
+            return tipo, ''
+    
     def soma(self):
-        # <soma> -> <mult> <restosoma>
-        parte1 = self.mult()
-        parte2 = self.restosoma()
-        return parte1 + parte2
-
-    def restosoma(self):
-        # <restosoma> -> + <mult> <restosoma> | - <mult> <restosoma> | LAMBDA
+        # <soma> -> <mult> <restoSoma>
+        tipoMult, codigo1 = self.mult()
+        tipoRestoMult, codigo2 = self.restoSoma(tipoMult)
+        return tipoRestoMult, codigo1 + codigo2
+        
+    def restoSoma(self, tipo):
+        # <restoSoma> -> LAMBDA | + <mult> <restoSoma> | - <mult> <restoSoma>
         if self.tokenLido[0] == TOKEN.mais:
             self.consome(TOKEN.mais)
-            parte1 = self.mult()
-            parte2 = self.restosoma()
-            return ' + ' + parte1 + parte2
+            tipoMult, codigo = self.mult()
+            tipoAux = self.semantico.checarOperacao(tipo, tipoMult, TOKEN.mais)
+            tipoRestoSoma, codigo2 = self.restoSoma(tipoAux)
+            return tipoRestoSoma, ' + ' + codigo + codigo2
         elif self.tokenLido[0] == TOKEN.menos:
             self.consome(TOKEN.menos)
-            parte1 = self.mult()
-            parte2 = self.restosoma()
-            return ' - ' + parte1 + parte2
+            tipoMult, codigo = self.mult()
+            tipoAux = self.semantico.checarOperacao(tipo, tipoMult, TOKEN.menos)
+            tipoRestoSoma, codigo2 = self.restoSoma(tipoAux)
+            return tipoRestoSoma, ' - ' + codigo + codigo2
         else:
-            return ''
-
+            return tipo, ''
+        
     def mult(self):
-        # <mult> -> < folha > < restomult >
-        parte1 = self.folha()
-        parte2 = self.restomult()
-        return parte1 + parte2
-
-    def restomult(self):
-        # < restomult > -> * < folha > < restomult > | / < folha > < restomult > | LAMBDA
-        if self.tokenLido[0] == TOKEN.multiplica:
-            self.consome(TOKEN.multiplica)
-            parte1 = self.folha()
-            parte2 = self.restomult()
-            return ' * ' + parte1 + parte2
-        elif self.tokenLido[0] == TOKEN.divide:
+        # <mult> -> <uno> <restoMult>
+        tipo, codigo = self.uno()
+        tipoRestoMult, codigo2 = self.restoMult(tipo)
+        return tipoRestoMult, codigo + codigo2
+        
+    def restoMult(self, tipo):
+        # <restoMult> -> <restoMult> -> LAMBDA | / <uno> <restoMult> | * <uno> <restoMult> | % <uno> <restoMult>
+        if self.tokenLido[0] == TOKEN.divide:
             self.consome(TOKEN.divide)
-            parte1 = self.folha()
-            parte2 = self.restomult()
-            return  ' / ' + parte1 + parte2
+            tipoUno, codigo = self.uno()
+            tipoAux = self.semantico.checarOperacao(tipo, tipoUno, TOKEN.divide)
+            tipoRestoMult, codigo2 = self.restoMult(tipoAux)
+            return tipoRestoMult, ' / ' + codigo + codigo2
+        elif self.tokenLido[0] == TOKEN.multiplica:
+            self.consome(TOKEN.multiplica)
+            tipoUno, codigo = self.uno()
+            tipoAux = self.semantico.checarOperacao(tipo, tipoUno, TOKEN.multiplica)
+            tipoRestoMult, codigo2 = self.restoMult(tipoAux)
+            return tipoRestoMult, ' * ' + codigo + codigo2
+        elif self.tokenLido[0] == TOKEN.porcento:
+            self.consome(TOKEN.porcento)
+            tipoUno, codigo = self.uno()
+            tipoAux = self.semantico.checarOperacao(tipo, tipoUno, TOKEN.porcento)
+            tipoRestoMult, codigo2 = self.restoMult(tipoAux)
+            return tipoRestoMult, ' % ' + codigo + codigo2
         else:
-            return ''
-
+            return tipo, ''
+        
+    def uno(self):
+        # <uno> -> + <uno> | - <uno> | <folha>
+        if self.tokenLido[0] == TOKEN.mais:
+            self.consome(TOKEN.mais)
+            tipoUno, codigo = self.uno()
+            return tipoUno, ' + ' + codigo
+        elif self.tokenLido[0] == TOKEN.menos:
+            self.consome(TOKEN.menos)
+            tipoUno, codigo = self.uno()
+            return tipoUno, ' - ' + codigo
+        else:
+            tipo, codigo = self.folha()
+            return tipo, codigo
+            
     def folha(self):
-        # <folha> -> num | ident | ( <exp> )
-        if self.tokenLido[0] == TOKEN.num:
-            salva = self.tokenLido[1]
-            self.consome(TOKEN.num)
-        elif self.tokenLido[0] == TOKEN.ident:
-            salva = self.tokenLido[1]
-            self.consome(TOKEN.ident)
+        #<folha> -> intVal | floatVal | strVal | <call> | <lista> | ( <exp> ) 
+        if self.tokenLido[0] == TOKEN.intVal:
+            codigo = self.consome(TOKEN.intVal)
+            return (TOKEN.INT, False), codigo
+        elif self.tokenLido[0] == TOKEN.floatVal:
+            codigo = self.consome(TOKEN.floatVal)
+            return (TOKEN.FLOAT, False), codigo
+        elif self.tokenLido[0] == TOKEN.stringVal:
+            codigo = self.consome(TOKEN.stringVal)
+            return (TOKEN.string, False), codigo
+        elif self.tokenLido[0] == TOKEN.ident or self.tokenLido[0] == TOKEN.abreCol:
+            tokenLido = self.tokenLido
+            result = self.semantico.consulta(tokenLido)
+            if tokenLido[0] == TOKEN.abreCol:
+                tipoLista, codigo = self.lista()
+                return tipoLista, codigo
+            elif result is None:
+                msg = f"Variavel {tokenLido[1]} nao declarada"
+                self.semantico.erroSemantico(tokenLido, msg)
+            else:
+                (tipo, info) = result
+                if tipo == TOKEN.FUNCTION:
+                    tipoCall, codigo = self.call()
+                    return tipoCall, codigo
+                else:
+                    tipoLista, codigo = self.lista()
+                    return tipoLista, codigo
         else:
             self.consome(TOKEN.abrePar)
-            salva = self.exp()
+            tipoExp, codigo = self.exp()
             self.consome(TOKEN.fechaPar)
-            salva = '(' + salva + ')'
-        return salva
+            return tipoExp, '(' + codigo + ')'
+            
+    def call(self):
+        # <call> -> ident ( <lista_outs_opc> )
+        salvarFunction = self.tokenLido
+        self.consome(TOKEN.ident)
+        self.consome(TOKEN.abrePar)
+        args, codigo = self.listaOutsOpc()
+        self.consome(TOKEN.fechaPar)
+        argsFunction = self.semantico.consulta(salvarFunction)
+        
+        if salvarFunction[1] in ['trunc', 'len', 'str2num', 'num2str']:
+            infos = argsFunction[1][:-1]
+            params, msgAux = self.semantico.verificarParametros(infos, args)
+            
+            if params is False:
+                msg = f'ERROR: Funcao {salvarFunction[1]} recebeu parametros invalidos'
+                self.semantico.erroSemantico(salvarFunction, msg)
+                
+            codigoFunction = self.semantico.funcoesNativas[salvarFunction[1]]
+            
+            retorno = argsFunction[1][-1]
+            return retorno, codigoFunction + '(' + codigo + ')'
+        else:
+            infos = [arg[1] for arg in argsFunction[1][:-1]]
+            params, msgAux = self.semantico.verificarParametros(infos, args)
+            
+            if params is False:
+                msg = f'ERROR: Funcao {salvarFunction[1]} recebeu parametros invalidos'
+                self.semantico.erroSemantico(salvarFunction, msg)
+            
+            retorno = argsFunction[1][-1][-1]
+            return retorno, 'self.' + salvarFunction[1] + '(' + codigo + ')'
+        
+    def opcIndice(self, tipo):
+        # <opcIndice> -> LAMBDA | [ <exp> <restoElem> ]
+        if self.tokenLido[0] == TOKEN.abreCol:
+            
+            if tipo[1] is not True:
+                msg = f'ERROR: Variavel {self.tokenLido[1]} nao e uma lista'
+                self.semantico.erroSemantico(self.tokenLido, msg)
+                
+            salvarToken = self.tokenLido            
+            self.consome(TOKEN.abreCol)
+            tipoExp, codigo = self.exp()
+            
+            if tipoExp != (TOKEN.INT, False):
+                msg = f'ERROR: Indice de lista deve ser do tipo inteiro'
+                self.semantico.erroSemantico(salvarToken, msg)
+                
+            tipoRestoElem, codigo2 = self.restoElem(tipoExp)
+            
+            if tipoRestoElem != (TOKEN.INT, False) and tipoRestoElem != (None, True):
+                msg = f'ERROR: Indice de lista deve ser do tipo inteiro'
+                self.semantico.erroSemantico(salvarToken, msg)
+            
+            if tipoRestoElem == (None, True):
+                tipoRestoElem = (tipo[0], True)
+            else:
+                tipoRestoElem = (tipo[0], False)
+            
+            self.consome(TOKEN.fechaCol)
+            return tipoRestoElem, '[' + codigo + codigo2 + ']'
+        else:
+            return tipo, ''
+        
+    def restoElem(self, tipo):
+        # <restoElem> -> LAMBDA | : <exp>
+        if self.tokenLido[0] == TOKEN.doisPontos:
+            self.consome(TOKEN.doisPontos)
+            tipoExp, codigo = self.exp()
+            tipoAux = self.semantico.checarOperacao(tipo, tipoExp, TOKEN.doisPontos)
+            return tipoAux, ': ' + codigo
+        else:
+            return tipo, ''
+        
+    def listaOutsOpc(self):
+        # <lista_outs_opc> -> <lista_outs> | LAMBDA
+        if self.tokenLido[0] in [TOKEN.intVal, TOKEN.floatVal, TOKEN.stringVal, TOKEN.ident, TOKEN.abrePar]:
+            args, codigo = self.listaOuts()
+            return args, codigo
+        else:
+            return [], ''
+        
+# ------------------------------------------------ GERAÇÃO DE CÓDIGO ------------------------------------------------ #
 
+    def verificar_import_math(self):
+        fonte = re.sub(r'#.*', '', self.lexico.fonte)
+        pattern = r'(?<=\s|[+\-*/%=<>,;!():])trunc\('  # Expressão Regular que controla o import math (math.trunc())
+        return 'import math\n\n\n' if re.findall(pattern, fonte) else ''
+
+    def gerar_codigo_inicial(self):
+        codigo_inicial = self.verificar_import_math()
+
+        codigo_inicial += \
+            'class ' + 'Program' + ':\n' + \
+            '    def __init__(self):\n' + \
+            '        pass\n\n'
+        self.semantico.gera(0, codigo_inicial)
+
+    def gerar_codigo_final(self):
+        codigo_final = \
+            '\nif __name__ == \'__main__\':\n' + \
+            '    prog = ' + 'Program' + '()\n' + \
+            '    prog.main()\n'
+        self.semantico.gera(0, codigo_final)
+
+    def gerar_codigo_declaracoes(self, idents, atrib):
+        codigo_1, codigo_2 = '', ' = '
+        for identificador in idents:
+            codigo_1 += identificador[1] + ', '
+            codigo_2 += atrib + ', '
+        codigo = codigo_1[:-2] + codigo_2[:-2] + '\n'
+        self.semantico.gera(self.identacao, codigo)
+
+        
 if __name__ == '__main__':
     print("Para testar, chame o Tradutor")

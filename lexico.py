@@ -17,12 +17,12 @@ class Lexico:
         self.linha = 1  # linha atual no fonte
         self.coluna = 0  # coluna atual no fonte
         
-        self.tokenLido = self.getToken()
-        (token, lexema, linha, coluna) = self.tokenLido
-        while token != TOKEN.eof:
-            self.imprimeToken(self.tokenLido)
-            self.tokenLido = self.getToken()
-            (token, lexema, linha, coluna) = self.tokenLido
+        # self.tokenLido = self.getToken()
+        # (token, lexema, linha, coluna) = self.tokenLido
+        # while token != TOKEN.eof:
+        #     self.imprimeToken(self.tokenLido)
+        #     self.tokenLido = self.getToken()
+        #     (token, lexema, linha, coluna) = self.tokenLido
             
     def fimDoArquivo(self):
         return self.indiceFonte >= self.tamFonte
@@ -30,17 +30,21 @@ class Lexico:
     def getchar(self):
         if self.fimDoArquivo():
             return '\0'
+        
         car = self.fonte[self.indiceFonte]
         self.indiceFonte += 1
+        
         if car == '\n':
             self.linha += 1
-            # colocar self.coluna = 1 também está funcionando, ver qual dos dois está realmente certo
             self.coluna = 0
         else:
             self.coluna += 1
         return car
 
     def ungetchar(self, simbolo):
+        if simbolo == '\0':
+            return
+        
         if simbolo == '\n':
             self.linha -= 1
 
@@ -52,8 +56,7 @@ class Lexico:
     def imprimeToken(self, tokenCorrente):
         (token, lexema, linha, coluna) = tokenCorrente
         msg = TOKEN.msg(token)
-        print(f'(tk={msg} lex="{lexema}" lin={linha} col={coluna})')
-
+        print(f'([{msg}] ...... lex="{lexema}" [lin={linha}, col={coluna}])')
 
     def removerComentariosEspacosBrancos(self, simbolo):
         while simbolo in ['#', ' ', '\t', '\n']:
@@ -65,16 +68,14 @@ class Lexico:
             # descarta linhas brancas e espaços
             while simbolo in [' ', '\t', '\n']:
                 simbolo = self.getchar()
-                
-            self.ungetchar(simbolo)
-                
-                
+        return simbolo
+    
     def getToken(self):
         estado = 1
         simbolo = self.getchar()
         lexema = ''
-        
-        self.removerComentariosEspacosBrancos(simbolo)
+       
+        simbolo = self.removerComentariosEspacosBrancos(simbolo)
 
         lin = self.linha  # onde inicia o token, para msgs
         col = self.coluna  # onde inicia o token, para msgs
@@ -96,10 +97,13 @@ class Lexico:
                 elif simbolo == ";":
                     return (TOKEN.ptoVirg, ";", lin, col)
                 elif simbolo == ".":
-                    return (TOKEN.pto, ".", lin, col)
+                    return (TOKEN.erro, ".", lin, col)
                 elif simbolo == "+":
                     return (TOKEN.mais, "+", lin, col)
                 elif simbolo == "-":
+                    if self.fonte[self.indiceFonte] == '>':
+                        self.getchar()
+                        return (TOKEN.ARROW, "->", lin, col)
                     return (TOKEN.menos, "-", lin, col)
                 elif simbolo == "*":
                     return (TOKEN.multiplica, "*", lin, col)
@@ -109,6 +113,14 @@ class Lexico:
                     return (TOKEN.abreChave, "{", lin, col)
                 elif simbolo == "}":
                     return (TOKEN.fechaChave, "}", lin, col)
+                elif simbolo == ":":
+                    return (TOKEN.doisPontos, ":", lin, col)
+                elif simbolo == "%":
+                    return (TOKEN.porcento, "%", lin, col)
+                elif simbolo == "[":
+                    return (TOKEN.abreCol, "[", lin, col)
+                elif simbolo == "]":
+                    return (TOKEN.fechaCol, "]", lin, col)
                 elif simbolo == "<":
                     estado = 5  # < ou <=
                 elif simbolo == ">":
@@ -134,23 +146,44 @@ class Lexico:
 
             elif estado == 3:
                 # numeros
+                simbolosPermitidos = [' ', '\n', '\t', '\0', ',', ';', '+', '-', '*', '/', '=', '<', '>', '!', '{', '}', '(', ')']
                 if simbolo.isdigit():
                     estado = 3
                 elif simbolo == '.':
-                    estado = 31
+                    estado = 32
                 elif simbolo.isalpha():
                     lexema += simbolo
+                    simbolo = self.getchar()
+                    
+                    while simbolo not in simbolosPermitidos:
+                        lexema += simbolo
+                        simbolo = self.getchar()
+                        
+                    self.ungetchar(simbolo)
                     return (TOKEN.erro, lexema, lin, col)
                 else:
                     self.ungetchar(simbolo)
-                    return (TOKEN.num, lexema, lin, col)
+                    return (TOKEN.intVal, lexema, lin, col)
             elif estado == 31:
                 # parte real do numero
-                if simbolo.isdigit():
-                    estado = 32
-                else:
-                    self.ungetchar(simbolo)
-                    return (TOKEN.erro, lexema, lin, col)
+                simbolosPermitidos = [' ', '\n', '\t', '\0', ',', ';', '+', '-', '*', '/', '=', '<', '>', '!', '{', '}', '(', ')']
+                lexema += simbolo   
+                simbolo = self.getchar()
+                
+                while simbolo not in simbolosPermitidos:
+                    lexema += simbolo
+                    if not simbolo.isdigit():
+                        simbolo = self.getchar()
+                        
+                        while simbolo not in simbolosPermitidos:
+                            lexema += simbolo
+                            simbolo = self.getchar()
+                            
+                        self.ungetchar(simbolo)
+                        return (TOKEN.erro, lexema, lin, col)
+                    simbolo = self.getchar()
+                self.ungetchar(simbolo)
+                return (TOKEN.erro, lexema, lin, col)
             elif estado == 32:
                 # parte real do numero
                 if simbolo.isdigit():
@@ -160,14 +193,14 @@ class Lexico:
                     return (TOKEN.erro, lexema, lin, col)
                 else:
                     self.ungetchar(simbolo)
-                    return (TOKEN.num, lexema, lin, col)
+                    return (TOKEN.floatVal, lexema, lin, col)
 
             elif estado == 4:
                 # strings
                 while True:
                     if simbolo == '"':
                         lexema += simbolo
-                        return (TOKEN.string, lexema, lin, col)
+                        return (TOKEN.stringVal, lexema, lin, col)
                     if simbolo in ['\n', '\0']:
                         return (TOKEN.erro, lexema, lin, col)
                     if simbolo == '\\':  # isso é por causa do python
@@ -210,14 +243,14 @@ class Lexico:
                 else:  # se o proximo simbolo nao for = , quer dizer que tem um ! solto no código
                     self.ungetchar(simbolo)  # eu volto o "ponteiro" pra posicao que eu encontrei a !
                     return (TOKEN.erro, lexema, lin, col)  # retorno o ! dizendo que ele é um erro
-
+                
             else:
                 print('BUG!!!')
 
             lexema = lexema + simbolo
+            # print(f"simbolo: {lexema}   -   estado: {estado}")
             simbolo = self.getchar()
-
-
+    
 # inicia a traducao
 if __name__ == '__main__':
     print("Para testar, chame o Tradutor no main.py")

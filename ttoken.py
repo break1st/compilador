@@ -22,7 +22,10 @@ class TOKEN(IntEnum):
     virg = 14
     ptoVirg = 15
     pto = 16
+    FOR = 17
     oprel = 19
+    porcento = 20
+    doisPontos = 21
     AND = 23
     OR = 24
     NOT = 25
@@ -36,6 +39,21 @@ class TOKEN(IntEnum):
     abreChave = 33
     fechaChave = 34
     atrib = 35
+    THEN = 36
+    FUNCTION = 37
+    ARROW = 38
+    INT = 39
+    FLOAT = 40
+    abreCol = 41
+    fechaCol = 42
+    LIST = 43
+    RETURN = 44
+    DO = 45
+    IN = 46
+    RANGE = 47
+    floatVal = 48
+    intVal = 49
+    stringVal = 50
 
     @classmethod
     def msg(cls, token):
@@ -56,7 +74,10 @@ class TOKEN(IntEnum):
             14:',',
             15:';',
             16:'.',
+            17: 'for',
             19: 'oprel',
+            20: '%',
+            21: ':',
             23:'and',
             24:'or',
             25:'not',
@@ -69,7 +90,22 @@ class TOKEN(IntEnum):
             32:'var',
             33:'{',
             34:'}',
-            35:'='
+            35:'=',
+            36:'then',
+            37: 'function',
+            38: '->',
+            39: 'int',
+            40: 'float',
+            41: '[',
+            42: ']',
+            43: 'list',
+            44: 'return',
+            45: 'do',
+            46: 'in',
+            47: 'range',
+            48: 'floatVal',
+            49: 'intVal',
+            50: 'stringVal'
         }
         return nomes[token]
 
@@ -90,6 +126,16 @@ class TOKEN(IntEnum):
             'not': TOKEN.NOT,
             'string': TOKEN.string,
             'num': TOKEN.num,
+            'for': TOKEN.FOR,
+            'then': TOKEN.THEN,
+            'function': TOKEN.FUNCTION,
+            'int': TOKEN.INT,
+            'float': TOKEN.FLOAT,
+            'list': TOKEN.LIST,
+            'return': TOKEN.RETURN,
+            'do': TOKEN.DO,
+            'in': TOKEN.IN,
+            'range': TOKEN.RANGE
         }
         if lexema in reservadas:
             return reservadas[lexema]

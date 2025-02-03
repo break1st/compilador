@@ -10,13 +10,17 @@ class Tradutor:
 
     def __init__(self, nomeArq):
         self.nomeArq = nomeArq
+        self.arq = None
+        self.lexico = None
+        self.sintatico = None
 
     def inicializa(self):
         self.arq = open(self.nomeArq, "r")
         self.lexico = Lexico(self.arq)
-        # self.sintatico = Sintatico(self.lexico)
+        self.sintatico = Sintatico(self.lexico)
 
     def traduz(self):
+        print('Traduzindo...')
         self.sintatico.traduz()
 
     def finaliza(self):
@@ -24,10 +28,10 @@ class Tradutor:
 
 # inicia a traducao
 if __name__ == '__main__':
-    x = Tradutor('alg-teste.txt')
+    x = Tradutor('b_a_ba.txt')
     x.inicializa()
     # x.traduz()
-    #x.sintatico.testaLexico()
-    # x.finaliza()
+    x.sintatico.traduz()
+    x.finaliza()
 
 
