@@ -75,9 +75,12 @@ class Semantico:
             ((TOKEN.string, False), TOKEN.virg, (TOKEN.string, False)): (TOKEN.string, False),
             ((TOKEN.INT, False), TOKEN.virg, (TOKEN.FLOAT, False)): (TOKEN.FLOAT, False),
             ((TOKEN.FLOAT, False), TOKEN.virg, (TOKEN.INT, False)): (TOKEN.FLOAT, False),
+            ((None, True), TOKEN.atrib, (TOKEN.INT, True)): (TOKEN.INT, True),
+            ((None, True), TOKEN.atrib, (TOKEN.FLOAT, True)): (TOKEN.FLOAT, True),
+            ((None, True), TOKEN.atrib, (TOKEN.string, True)): (TOKEN.string, True),
         }
 
-        self.tipos_retorno = {
+        self.tipoRetornoFuncoes = {
             (TOKEN.INT, False): ' -> int',
             (TOKEN.FLOAT, False): ' -> float',
             (TOKEN.string, False): ' -> str',

@@ -64,12 +64,12 @@ class Sintatico:
 # ----------------------------------------- GRAMÁTICA -----------------------------------------
     def prog(self):
         # <prog> -> <funcao> <RestoFuncoes>
-        self.gerar_codigo_inicial()
+        self.gerarCodigoInicial()
         self.funcao()
         self.restoFuncoes()
         self.semantico.verificaMain()
         self.consome(TOKEN.eof)
-        self.gerar_codigo_final()
+        self.gerarCodigoFinal()
         
     def restoFuncoes(self):
         # <RestoFuncoes> -> <funcao> <RestoFuncoes> | LAMBDA
@@ -94,7 +94,7 @@ class Sintatico:
             (tt, (tipo, info)) = arg
             self.semantico.declara(tt, (tipo, info))
             
-        codigo = 'def ' + IDENT[1] + '(self' + codigoUm + '):' + codigoDois + ':\n'
+        codigo = 'def ' + IDENT[1] + '(self' + codigoUm + ')' + codigoDois + ':\n'
         self.semantico.gera(1, codigo)
         
         self.corpo()
@@ -109,7 +109,7 @@ class Sintatico:
         else:
             tipo = None
         randomToken = (0, 0, 0, 0)
-        return [(randomToken, tipo)], self.semantico.tipos_retorno[tipo]
+        return [(randomToken, tipo)], self.semantico.tipoRetornoFuncoes[tipo]
         
     def params(self):
         # <params> -> <tipo> ident <restoParams> | LAMBDA
@@ -155,20 +155,20 @@ class Sintatico:
     def declara(self):
         # <declara> -> <tipo> <idents> ;
         tipo = self.tipo()
-        salvar_idents = self.idents()
+        idents = self.idents()
         self.consome(TOKEN.ptoVirg)
 
-        for identificador in salvar_idents:
+        for identificador in idents:
             self.semantico.declara(identificador, tipo)
 
         if tipo == (TOKEN.INT, False):
-            self.gerar_codigo_declaracoes(salvar_idents, '0')
+            self.geraCodigoDeclara(idents, '0')
         elif tipo == (TOKEN.FLOAT, False):
-            self.gerar_codigo_declaracoes(salvar_idents, '0.0')
+            self.geraCodigoDeclara(idents, '0.0')
         elif tipo == (TOKEN.string, False):
-            self.gerar_codigo_declaracoes(salvar_idents, '""')
+            self.geraCodigoDeclara(idents, '""')
         elif tipo[1] is True:
-            self.gerar_codigo_declaracoes(salvar_idents, '[]')
+            self.geraCodigoDeclara(idents, '[]')
         
     def idents(self):
         # <idents> -> ident <restoIdents>
@@ -181,7 +181,8 @@ class Sintatico:
         if self.tokenLido[0] == TOKEN.virg:
             self.consome(TOKEN.virg)
             IDENT = self.consome(TOKEN.ident)
-            return [IDENT] + self.restoIdents()
+            restoIdents = self.restoIdents()
+            return [IDENT] + restoIdents
         else:
             return []
         
@@ -212,13 +213,6 @@ class Sintatico:
             return True
         else:
             return False
-        
-    # def p(self):
-    #     self.consome(TOKEN.BEGIN)
-    #     lexema = self.tokenLido[1]
-    #     self.calculo()
-    #     self.consome(TOKEN.END)
-    #     self.consome(TOKEN.eof)
 
     def calculo(self):
         # <calculo> -> LAMBDA | <com> <calculo>
@@ -484,7 +478,7 @@ class Sintatico:
         # <else_opc> -> LAMBDA | else <com>
         if self.tokenLido[0] == TOKEN.ELSE:
             self.consome(TOKEN.ELSE)
-            codigo = 'else:\n'
+            codigo = 'else: \n'
             self.semantico.gera(self.identacao, codigo)
             self.identacao = self.identacao + 1
             self.com()
@@ -536,7 +530,7 @@ class Sintatico:
         # <lista_outs> -> <out> <restoLista_outs>
         args, codigo = self.out()
         restoArgs, restoCodigo = self.restoListaOuts()
-        return [args] + restoArgs, codigo + restoCodigo
+        return [args] + restoArgs, codigo +restoCodigo
     
     def restoListaOuts(self):
         # <restoLista_outs> -> LAMBDA | , <out> <restoLista_outs>
@@ -544,8 +538,7 @@ class Sintatico:
             self.consome(TOKEN.virg)
             arg, codigo = self.out()
             restoArgs, restoCodigo = self.restoListaOuts()
-            print('AAAAAAAAAAAAAAAAAAAAAAAa', restoCodigo)
-            print('BBBBBBBBBBBBBBBBBBBBBBBBB', codigo)
+            
             return [arg] + restoArgs, ', '  + codigo + restoCodigo
         else:
             return [], ''
@@ -619,11 +612,11 @@ class Sintatico:
     def restoRel(self, tipo):
         # <restoRel> -> LAMBDA | oprel <soma>
         if self.tokenLido[0] == TOKEN.oprel:
-            salvarOprel = self.consome(TOKEN.oprel)
+            salvarOprel = self.tokenLido[1]
+            self.consome(TOKEN.oprel)
             tipoSoma, codigo = self.soma()
             tipoAux = self.semantico.checaOperacao(tipo, tipoSoma, TOKEN.oprel)
-            # TODO
-            return tipoAux, ' ' + salvarOprel[1] + ' ' + codigo
+            return tipoAux, ' ' + salvarOprel + ' ' + codigo
         else:
             return tipo, ''
     
@@ -654,7 +647,7 @@ class Sintatico:
         # <mult> -> <uno> <restoMult>
         tipo, codigo = self.uno()
         tipoRestoMult, codigo2 = self.restoMult(tipo)
-        return tipoRestoMult, ''
+        return tipoRestoMult, codigo + codigo2
         
     def restoMult(self, tipo):
         # <restoMult> -> <restoMult> -> LAMBDA | / <uno> <restoMult> | * <uno> <restoMult> | % <uno> <restoMult>
@@ -684,11 +677,11 @@ class Sintatico:
         if self.tokenLido[0] == TOKEN.mais:
             self.consome(TOKEN.mais)
             tipoUno, codigo = self.uno()
-            return tipoUno, ' + ' + codigo
+            return tipoUno, '+' + codigo
         elif self.tokenLido[0] == TOKEN.menos:
             self.consome(TOKEN.menos)
             tipoUno, codigo = self.uno()
-            return tipoUno, ' - '
+            return tipoUno, '-' + codigo
         else:
             tipo, codigo = self.folha()
             return tipo, codigo
@@ -696,28 +689,30 @@ class Sintatico:
     def folha(self):
         #<folha> -> intVal | floatVal | strVal | <call> | <lista> | ( <exp> ) 
         if self.tokenLido[0] == TOKEN.intVal:
-            codigo = self.consome(TOKEN.intVal)
+            codigo = self.tokenLido[1]
+            self.consome(TOKEN.intVal)
             return (TOKEN.INT, False), codigo
         
         elif self.tokenLido[0] == TOKEN.floatVal:
-            codigo = self.consome(TOKEN.floatVal)
+            codigo = self.tokenLido[1]
+            self.consome(TOKEN.floatVal)
             return (TOKEN.FLOAT, False), codigo
         
         elif self.tokenLido[0] == TOKEN.stringVal:
-            codigo = self.consome(TOKEN.stringVal)
+            codigo = self.tokenLido[1]
+            self.consome(TOKEN.stringVal)
             return (TOKEN.string, False), codigo
         
         elif self.tokenLido[0] == TOKEN.ident or self.tokenLido[0] == TOKEN.abreCol:
-            tokenLido = self.tokenLido
-            result = self.semantico.consulta(tokenLido)
+            result = self.semantico.consulta(self.tokenLido)
             
-            if tokenLido[0] == TOKEN.abreCol:
+            if self.tokenLido[0] == TOKEN.abreCol:
                 tipoLista, codigo = self.lista()
                 return tipoLista, codigo
             
             elif result is None:
-                msg = f"Variavel {tokenLido[1]} nao declarada"
-                self.semantico.erroSemantico(tokenLido, msg)
+                msg = f"Variavel {self.tokenLido[1]} nao declarada"
+                self.semantico.erroSemantico(self.tokenLido, msg)
             
             else:
                 (tipo, info) = result
@@ -804,7 +799,7 @@ class Sintatico:
             self.consome(TOKEN.doisPontos)
             tipoExp, codigo = self.exp()
             tipoAux = self.semantico.checaOperacao(tipo, tipoExp, TOKEN.doisPontos)
-            return tipoAux, ': ' + codigo
+            return tipoAux, ':' + codigo
         else:
             return tipo, ''
         
@@ -823,7 +818,7 @@ class Sintatico:
         pattern = r'(?<=\s|[+\-*/%=<>,;!():])trunc\('  # Expressão Regular que controla o import math (math.trunc())
         return 'import math\n\n\n' if re.findall(pattern, fonte) else ''
 
-    def gerar_codigo_inicial(self):
+    def gerarCodigoInicial(self):
         codigo_inicial = self.verificarImportMath()
 
         codigo_inicial += \
@@ -832,14 +827,14 @@ class Sintatico:
             '        pass\n\n'
         self.semantico.gera(0, codigo_inicial)
 
-    def gerar_codigo_final(self):
+    def gerarCodigoFinal(self):
         codigo_final = \
             '\nif __name__ == \'__main__\':\n' + \
             '    prog = ' + 'Program' + '()\n' + \
             '    prog.main()\n'
         self.semantico.gera(0, codigo_final)
 
-    def gerar_codigo_declaracoes(self, idents, atrib):
+    def geraCodigoDeclara(self, idents, atrib):
         codigo_1, codigo_2 = '', ' = '
         for identificador in idents:
             codigo_1 += identificador[1] + ', '
